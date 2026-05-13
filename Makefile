@@ -1,0 +1,32 @@
+.PHONY: help check test fmt lint doc ci
+
+help:
+	@echo "Available targets:"
+	@echo "  check  Check workspace compiles"
+	@echo "  test   Run all tests (mock feature)"
+	@echo "  fmt    Format code"
+	@echo "  lint   Run clippy with warnings as errors"
+	@echo "  doc    Build and open docs in browser"
+	@echo "  ci     Run all CI checks locally"
+
+check:
+	cargo check --workspace --all-features
+
+test:
+	cargo test --workspace --features mock
+
+fmt:
+	cargo fmt --all
+
+lint:
+	cargo clippy --workspace --all-features -- -D warnings
+
+doc:
+	cargo doc --no-deps -p wavekat-asr --all-features --open
+
+ci:
+	cargo fmt --all -- --check
+	cargo clippy --workspace --all-features -- -D warnings
+	cargo test -p wavekat-asr --no-default-features
+	cargo test -p wavekat-asr --no-default-features --features mock
+	cargo doc --no-deps -p wavekat-asr --all-features

@@ -1,0 +1,31 @@
+[package]
+name = "wavekat-asr"
+description = "Unified streaming ASR with multiple backends"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository = "https://github.com/wavekat/wavekat-asr"
+homepage = "https://github.com/wavekat/wavekat-asr"
+documentation = "https://docs.rs/wavekat-asr"
+readme = "../../README.md"
+keywords = ["asr", "speech-to-text", "voice", "telephony", "wavekat"]
+categories = ["multimedia::audio"]
+exclude = ["CHANGELOG.md"]
+
+[features]
+default = []
+# Mock backend that emits canned transcript events. Useful for
+# downstream integration tests against the trait surface.
+mock = []
+
+[dependencies]
+wavekat-core = "0.0.7"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "time", "sync"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
