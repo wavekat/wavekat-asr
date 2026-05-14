@@ -1,6 +1,6 @@
 # 01 — Plan: streaming ASR trait
 
-**Status:** Scaffold landed (mock only)
+**Status:** Scaffold landed; mock backend removed once sherpa-onnx shipped (see [03-sherpa-onnx-backend.md](03-sherpa-onnx-backend.md))
 **Date:** 2026-05-14
 
 ---
@@ -27,8 +27,9 @@ add that doc when we pick the first real backend to build.
 - The `Channel` enum — `Local` vs `Remote`, so a single ASR instance can
   serve both sides of a call.
 - The `AsrError` enum (thiserror).
-- The `mock` backend — emits a scripted sequence of events on each
+- A `mock` backend that emitted a scripted sequence of events on each
   `push_audio` call. Pairs the impl with a `std::sync::mpsc::Receiver`.
+  (Removed after the sherpa-onnx backend landed — see [03-sherpa-onnx-backend.md](03-sherpa-onnx-backend.md).)
 - Workspace + CI + release-plz wired up so subsequent versions cut
   themselves on merge to `main`.
 
@@ -54,9 +55,9 @@ These need answers before we ship a real backend behind its own feature:
    the `StreamingAsr`. Acceptable for lightweight backends; expensive
    for ones that load big models on construction.
 4. **Configuration shape.** Each backend will need its own constructor
-   (`MockAsr::new()`, `XxxAsr::new(XxxConfig)`, …). No common builder
-   trait yet — resist abstracting until at least two real backends
-   exist.
+   (`SherpaOnnxAsr::new()`, `XxxAsr::new(XxxConfig)`, …). No common
+   builder trait yet — resist abstracting until at least two real
+   backends exist.
 5. **Confidence reporting.** Backends that don't report per-segment
    confidence currently emit `1.0`. Alternative is `Option<f32>` — costs
    ergonomics, gained accuracy. Decide when there's a backend that

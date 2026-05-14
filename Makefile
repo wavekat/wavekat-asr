@@ -3,7 +3,7 @@
 help:
 	@echo "Available targets:"
 	@echo "  check  Check workspace compiles"
-	@echo "  test   Run all tests (mock feature)"
+	@echo "  test   Run all tests (sherpa-onnx feature)"
 	@echo "  fmt    Format code"
 	@echo "  lint   Run clippy with warnings as errors"
 	@echo "  doc    Build and open docs in browser"
@@ -13,7 +13,7 @@ check:
 	cargo check --workspace --all-features
 
 test:
-	cargo test --workspace --features mock
+	cargo test --workspace --features sherpa-onnx
 
 fmt:
 	cargo fmt --all
@@ -28,5 +28,5 @@ ci:
 	cargo fmt --all -- --check
 	cargo clippy --workspace --all-features -- -D warnings
 	cargo test -p wavekat-asr --no-default-features
-	cargo test -p wavekat-asr --no-default-features --features mock
+	cargo test -p wavekat-asr --no-default-features --features sherpa-onnx
 	cargo doc --no-deps -p wavekat-asr --all-features

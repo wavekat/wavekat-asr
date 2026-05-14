@@ -14,9 +14,6 @@ exclude = ["CHANGELOG.md"]
 
 [features]
 default = []
-# Mock backend that emits canned transcript events. Useful for
-# downstream integration tests against the trait surface.
-mock = []
 # Local streaming backend wrapping sherpa-onnx around a streaming
 # Zipformer transducer. Auto-downloads the default bilingual EN+ZH
 # model from HuggingFace on first use.
