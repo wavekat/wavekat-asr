@@ -9,11 +9,12 @@
 //!
 //! # Status
 //!
-//! This release ships only the trait shape and a `mock` backend
-//! ([`backends::mock`], behind the `mock` Cargo feature) so downstream
-//! consumers can wire integration tests against the contract. No real
-//! ASR backends are bundled yet — the trait may iterate before the
-//! first one lands. Pin to an exact patch version.
+//! This crate is pre-1.0. The trait surface may iterate as more
+//! backends land. Pin to an exact patch version.
+//!
+//! The bundled backend is [`backends::sherpa_onnx`] (behind the
+//! `sherpa-onnx` Cargo feature): a local streaming Zipformer that
+//! auto-downloads its model from HuggingFace on first use.
 
 pub mod backends;
 pub mod error;

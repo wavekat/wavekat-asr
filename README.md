@@ -14,45 +14,15 @@ more speech-to-text backends behind a common Rust API. Same pattern as
 [wavekat-turn](https://github.com/wavekat/wavekat-turn).
 
 > [!WARNING]
-> **Scaffold release.** This crate ships only the trait shape and a
-> scripted-event `mock` backend so downstream consumers can wire
-> integration tests against the contract. No real ASR backends are
-> bundled yet — the trait may iterate before the first one lands. Pin to
-> an exact patch version.
+> **Pre-1.0.** The trait surface may iterate as more backends land. Pin
+> to an exact patch version.
 
 ## What's included
 
 | Item | Feature flag |
 |------|--------------|
 | `StreamingAsr` trait, `TranscriptEvent`, `Channel`, `AsrError` | always |
-| `MockAsr` — scripted partials → final, paired with an `mpsc::Receiver` | `mock` |
 | `SherpaOnnxAsr` — local streaming Zipformer (EN+ZH bilingual by default); auto-downloads model from HuggingFace on first use | `sherpa-onnx` |
-
-## Quick start
-
-```sh
-cargo add wavekat-asr --features mock
-```
-
-```rust
-use wavekat_asr::{AudioFrame, Channel, StreamingAsr, TranscriptEvent};
-use wavekat_asr::backends::mock::MockAsr;
-
-let (mut asr, rx) = MockAsr::new();
-let samples = vec![0i16; 160];
-let frame = AudioFrame::new(&samples, 16_000);
-
-asr.push_audio(&frame, Channel::Local).unwrap();
-asr.finish().unwrap();
-
-for event in rx.try_iter() {
-    match event {
-        TranscriptEvent::Final { text, .. } => println!("final: {text}"),
-        TranscriptEvent::Partial { text, .. } => println!("partial: {text}"),
-        _ => {}
-    }
-}
-```
 
 ## Examples
 

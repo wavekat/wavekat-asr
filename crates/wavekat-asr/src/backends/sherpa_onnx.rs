@@ -207,7 +207,7 @@ impl Default for SherpaOnnxConfig {
 ///
 /// Construct via [`SherpaOnnxAsr::new`] or [`SherpaOnnxAsr::with_config`].
 /// Both return a paired [`Receiver<TranscriptEvent>`] alongside the
-/// session, matching the shape of the mock backend.
+/// session.
 ///
 /// # Phase 1 limitations
 ///
