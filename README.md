@@ -26,6 +26,7 @@ more speech-to-text backends behind a common Rust API. Same pattern as
 |------|--------------|
 | `StreamingAsr` trait, `TranscriptEvent`, `Channel`, `AsrError` | always |
 | `MockAsr` — scripted partials → final, paired with an `mpsc::Receiver` | `mock` |
+| `SherpaOnnxAsr` — local streaming Zipformer (EN+ZH bilingual by default); auto-downloads model from HuggingFace on first use | `sherpa-onnx` |
 
 ## Quick start
 
@@ -51,6 +52,19 @@ for event in rx.try_iter() {
         _ => {}
     }
 }
+```
+
+## Examples
+
+Two runnable examples ship behind `--features sherpa-onnx`. First run
+auto-downloads the bilingual EN+ZH model (~75 MB) into hf-hub's cache.
+
+```sh
+# Transcribe a 16 kHz mono WAV file
+cargo run --release --example transcribe_wav --features sherpa-onnx -- audio.wav
+
+# Live mic transcription (Ctrl-C to stop)
+cargo run --release --example transcribe_mic --features sherpa-onnx
 ```
 
 ## Architecture
