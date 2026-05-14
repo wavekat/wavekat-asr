@@ -7,11 +7,10 @@
 
 ## Why this doc exists now
 
-The `wavekat-asr` mandate from the consumer ([`wavekat-voice`](https://github.com/wavekat/wavekat-voice))
-is "support local model **or** commercial models behind one interface."
-[`03`](03-sherpa-onnx-backend.md) commits us to a local backend first; this
-doc records the constraints commercial backends will place on the trait so
-we don't paint the local backend into a corner.
+The `wavekat-asr` mandate is "support local model **or** commercial models
+behind one interface." [`03`](03-sherpa-onnx-backend.md) commits us to a
+local backend first; this doc records the constraints commercial backends
+will place on the trait so we don't paint the local backend into a corner.
 
 We do **not** implement any commercial backend in v1. We just make sure the
 trait survives one.

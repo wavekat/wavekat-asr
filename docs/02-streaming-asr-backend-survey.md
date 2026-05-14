@@ -12,9 +12,8 @@ are tracked as follow-up backends.
 ## Why this doc
 
 The scaffold in [`01-plan-asr.md`](01-plan-asr.md) intentionally avoided
-committing to a backend. We now need one — the consumer is
-[`wavekat-voice`](https://github.com/wavekat/wavekat-voice), which wants live
-transcription of both call legs (local mic + remote RTP) rendered into the
+committing to a backend. We now need one — the target use case is live
+transcription of both call legs (local mic + remote RTP) rendered into a
 desktop UI as a phone call unfolds.
 
 This doc captures the candidates that were evaluated, the criteria, and the
@@ -28,7 +27,7 @@ The first consumer is a softphone. Concretely:
 
 - **Two channels per call.** `Channel::Local` is the user's mic; `Channel::Remote`
   is incoming RTP audio (typically G.711 µ-law / A-law from the SIP peer,
-  decoded and resampled by `wavekat-voice`). Both run concurrently.
+  decoded and resampled by the host daemon). Both run concurrently.
 - **Phone-grade audio.** 8 kHz narrowband from the RTP side, 16 or 48 kHz from
   the mic side. The trait already accepts any [`AudioFrame`] rate; the backend
   resamples internally.

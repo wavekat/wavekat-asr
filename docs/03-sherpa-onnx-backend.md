@@ -16,7 +16,7 @@ instances, so a single call's local + remote audio can be transcribed by one
 backend instance.
 
 This is the analogue of
-[`wavekat-tts/docs/03-qwen3-tts-backend.md`](../../wavekat-tts/docs/03-qwen3-tts-backend.md)
+[`wavekat-tts/docs/03-qwen3-tts-backend.md`](https://github.com/wavekat/wavekat-tts/blob/main/docs/03-qwen3-tts-backend.md)
 — sibling repos use the same doc shape.
 
 ---
@@ -66,8 +66,8 @@ pub trait StreamingAsr: Send {
 ```
 
 `MockAsr` gains a no-op `reset` returning `Ok(())`. This is a breaking
-change to the trait, but the crate is `0.0.x` and the only known consumer
-(`wavekat-voice`) hasn't shipped against it yet — acceptable.
+change to the trait, but the crate is `0.0.x` and no downstream has shipped
+against it yet — acceptable.
 
 ---
 
