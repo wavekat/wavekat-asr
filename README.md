@@ -57,7 +57,7 @@ for event in rx.try_iter() {
 ## Examples
 
 Two runnable examples ship behind `--features sherpa-onnx`. First run
-auto-downloads the bilingual EN+ZH model (~75 MB) into hf-hub's cache.
+auto-downloads the selected model into hf-hub's cache.
 
 ```sh
 # Transcribe a 16 kHz mono WAV file
@@ -65,7 +65,21 @@ cargo run --release --example transcribe_wav --features sherpa-onnx -- audio.wav
 
 # Live mic transcription (Ctrl-C to stop)
 cargo run --release --example transcribe_mic --features sherpa-onnx
+
+# Pick a different model (default is `bilingual`)
+WAVEKAT_ASR_PRESET=en cargo run --release --example transcribe_mic --features sherpa-onnx
 ```
+
+Bundled model presets — model choice is a construction-time call (the
+ONNX files load into the recognizer); switching models requires
+rebuilding the backend.
+
+| `WAVEKAT_ASR_PRESET` | Constant | HF repo | Best for |
+|----------------------|----------|---------|----------|
+| `bilingual` *(default)* | `BILINGUAL_ZH_EN` | `csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` | Mixed EN+ZH calls |
+| `en` | `ZIPFORMER_EN` | `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26` | English-only |
+| `zh` | `PARAFORMER_ZH` | `csukuangfj/sherpa-onnx-streaming-paraformer-zh` | Mandarin-only (often beats bilingual on ZH WER) |
+| `paraformer-zh-en` | `PARAFORMER_BILINGUAL_ZH_EN` | `csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en` | ZH-leaning bilingual alternative |
 
 ## Architecture
 

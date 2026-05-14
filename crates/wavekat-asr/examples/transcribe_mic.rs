@@ -10,6 +10,9 @@
 //!
 //! First run downloads the bilingual EN+ZH Zipformer (~75 MB) into
 //! hf-hub's cache.
+//!
+//! Pick a different model with `WAVEKAT_ASR_PRESET=<name>`:
+//!   `bilingual` (default) | `en` | `zh` | `paraformer-zh-en`
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
@@ -19,7 +22,10 @@ use std::time::Duration;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 
-use wavekat_asr::backends::sherpa_onnx::SherpaOnnxAsr;
+use wavekat_asr::backends::sherpa_onnx::{
+    ModelPreset, SherpaOnnxAsr, BILINGUAL_ZH_EN, PARAFORMER_BILINGUAL_ZH_EN, PARAFORMER_ZH,
+    ZIPFORMER_EN,
+};
 use wavekat_asr::{AudioFrame, Channel, StreamingAsr, TranscriptEvent};
 use wavekat_core::AudioFrame as CoreAudioFrame;
 
@@ -47,8 +53,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "input device : {name} ({device_rate} Hz, {channels} ch, {:?})",
         sample_format
     );
+    let preset = pick_preset();
+    eprintln!(
+        "model preset : {} (override with WAVEKAT_ASR_PRESET)",
+        preset_label()
+    );
     eprintln!("constructing sherpa-onnx backend (may download model on first run)…");
-    let (mut asr, asr_rx) = SherpaOnnxAsr::new()?;
+    let (mut asr, asr_rx) = SherpaOnnxAsr::with_preset(preset)?;
     eprintln!("listening — speak into the mic, Ctrl-C to stop.\n");
 
     let (audio_tx, audio_rx) = channel::<Vec<f32>>();
@@ -140,6 +151,28 @@ fn make_callback<T: ToF32 + Send + 'static>(
         };
         if !mono.is_empty() {
             let _ = tx.send(mono);
+        }
+    }
+}
+
+fn preset_label() -> String {
+    std::env::var("WAVEKAT_ASR_PRESET").unwrap_or_else(|_| "bilingual".into())
+}
+
+fn pick_preset() -> ModelPreset {
+    match std::env::var("WAVEKAT_ASR_PRESET")
+        .unwrap_or_default()
+        .as_str()
+    {
+        "" | "bilingual" | "bilingual-zh-en" => BILINGUAL_ZH_EN,
+        "en" | "english" | "zipformer-en" => ZIPFORMER_EN,
+        "zh" | "chinese" | "paraformer-zh" => PARAFORMER_ZH,
+        "paraformer-zh-en" | "paraformer-bilingual" => PARAFORMER_BILINGUAL_ZH_EN,
+        other => {
+            eprintln!(
+                "unknown WAVEKAT_ASR_PRESET `{other}`; falling back to `bilingual`"
+            );
+            BILINGUAL_ZH_EN
         }
     }
 }

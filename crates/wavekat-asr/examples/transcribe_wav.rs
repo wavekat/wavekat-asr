@@ -7,10 +7,16 @@
 //! On first run with no `WAVEKAT_ASR_MODEL_DIR` set, the default
 //! bilingual EN+ZH streaming Zipformer is downloaded from HuggingFace
 //! into hf-hub's cache (~/.cache/huggingface). Subsequent runs reuse it.
+//!
+//! Pick a different model with `WAVEKAT_ASR_PRESET=<name>`:
+//!   `bilingual` (default) | `en` | `zh` | `paraformer-zh-en`
 
 use std::path::PathBuf;
 
-use wavekat_asr::backends::sherpa_onnx::SherpaOnnxAsr;
+use wavekat_asr::backends::sherpa_onnx::{
+    ModelPreset, SherpaOnnxAsr, BILINGUAL_ZH_EN, PARAFORMER_BILINGUAL_ZH_EN, PARAFORMER_ZH,
+    ZIPFORMER_EN,
+};
 use wavekat_asr::{AudioFrame, Channel, StreamingAsr, TranscriptEvent};
 use wavekat_core::AudioFrame as CoreAudioFrame;
 
@@ -35,8 +41,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         frame.sample_rate()
     );
 
-    eprintln!("constructing sherpa-onnx backend (may download model on first run)…");
-    let (mut asr, rx) = SherpaOnnxAsr::new()?;
+    let preset = pick_preset();
+    eprintln!(
+        "constructing sherpa-onnx backend with preset `{}` (may download model on first run)…",
+        preset_label()
+    );
+    let (mut asr, rx) = SherpaOnnxAsr::with_preset(preset)?;
 
     // Push in 100 ms chunks so we get partials during streaming, not
     // just one block at the end.
@@ -50,6 +60,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drain(&rx);
 
     Ok(())
+}
+
+fn preset_label() -> String {
+    std::env::var("WAVEKAT_ASR_PRESET").unwrap_or_else(|_| "bilingual".into())
+}
+
+fn pick_preset() -> ModelPreset {
+    match std::env::var("WAVEKAT_ASR_PRESET")
+        .unwrap_or_default()
+        .as_str()
+    {
+        "" | "bilingual" | "bilingual-zh-en" => BILINGUAL_ZH_EN,
+        "en" | "english" | "zipformer-en" => ZIPFORMER_EN,
+        "zh" | "chinese" | "paraformer-zh" => PARAFORMER_ZH,
+        "paraformer-zh-en" | "paraformer-bilingual" => PARAFORMER_BILINGUAL_ZH_EN,
+        other => {
+            eprintln!(
+                "unknown WAVEKAT_ASR_PRESET `{other}`; falling back to `bilingual`"
+            );
+            BILINGUAL_ZH_EN
+        }
+    }
 }
 
 fn drain(rx: &std::sync::mpsc::Receiver<TranscriptEvent>) {

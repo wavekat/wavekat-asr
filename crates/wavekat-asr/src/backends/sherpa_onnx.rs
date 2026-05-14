@@ -32,26 +32,92 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use sherpa_onnx::{
-    OnlineModelConfig, OnlineRecognizer, OnlineRecognizerConfig, OnlineStream,
-    OnlineTransducerModelConfig,
+    OnlineModelConfig, OnlineParaformerModelConfig, OnlineRecognizer, OnlineRecognizerConfig,
+    OnlineStream, OnlineTransducerModelConfig,
 };
 
 use crate::{AsrError, AudioFrame, Channel, StreamingAsr, TranscriptEvent};
 
 const SAMPLE_RATE: i32 = 16_000;
 
-/// Default HuggingFace repo id for the v1 bilingual EN+ZH streaming Zipformer.
-pub const DEFAULT_MODEL_ID: &str =
-    "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
+/// Streaming model family.
+///
+/// Different architectures need different `OnlineModelConfig` slots —
+/// transducer uses encoder+decoder+joiner, Paraformer uses just
+/// encoder+decoder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelFamily {
+    /// k2 Zipformer transducer (encoder + decoder + joiner).
+    Transducer,
+    /// Alibaba/FunASR Paraformer (encoder + decoder; no joiner).
+    Paraformer,
+}
 
-/// Default filename for the encoder ONNX (int8 quantized).
-pub const DEFAULT_ENCODER: &str = "encoder-epoch-99-avg-1.int8.onnx";
-/// Default filename for the decoder ONNX.
-pub const DEFAULT_DECODER: &str = "decoder-epoch-99-avg-1.onnx";
-/// Default filename for the joiner ONNX (int8 quantized).
-pub const DEFAULT_JOINER: &str = "joiner-epoch-99-avg-1.int8.onnx";
-/// Default filename for the tokens table.
-pub const DEFAULT_TOKENS: &str = "tokens.txt";
+/// A bundled-model preset that fills in `model_id`, model family, and
+/// the per-file names for [`SherpaOnnxConfig`].
+///
+/// Use [`SherpaOnnxConfig::from_preset`] (or [`SherpaOnnxAsr::with_preset`])
+/// to construct a backend from one of the constants below.
+#[derive(Debug, Clone)]
+pub struct ModelPreset {
+    /// HuggingFace repo id.
+    pub model_id: &'static str,
+    /// Architecture family — determines which sherpa-onnx config slot is used.
+    pub family: ModelFamily,
+    /// Encoder filename inside the repo / model directory.
+    pub encoder: &'static str,
+    /// Decoder filename inside the repo / model directory.
+    pub decoder: &'static str,
+    /// Joiner filename. `Some(...)` for [`Transducer`](ModelFamily::Transducer),
+    /// `None` for [`Paraformer`](ModelFamily::Paraformer).
+    pub joiner: Option<&'static str>,
+    /// Tokens filename.
+    pub tokens: &'static str,
+}
+
+/// Bilingual EN+ZH streaming Zipformer (default). Handles mixed-language
+/// speech but can over-produce Hanzi for English-only audio.
+pub const BILINGUAL_ZH_EN: ModelPreset = ModelPreset {
+    model_id: "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
+    family: ModelFamily::Transducer,
+    encoder: "encoder-epoch-99-avg-1.int8.onnx",
+    decoder: "decoder-epoch-99-avg-1.onnx",
+    joiner: Some("joiner-epoch-99-avg-1.int8.onnx"),
+    tokens: "tokens.txt",
+};
+
+/// English-only streaming Zipformer. Best WER on English; will hallucinate
+/// on Chinese input.
+pub const ZIPFORMER_EN: ModelPreset = ModelPreset {
+    model_id: "csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26",
+    family: ModelFamily::Transducer,
+    encoder: "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+    decoder: "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+    joiner: Some("joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx"),
+    tokens: "tokens.txt",
+};
+
+/// Chinese-only streaming Paraformer (FunASR). Often beats the bilingual
+/// Zipformer on Mandarin WER; useless for English.
+pub const PARAFORMER_ZH: ModelPreset = ModelPreset {
+    model_id: "csukuangfj/sherpa-onnx-streaming-paraformer-zh",
+    family: ModelFamily::Paraformer,
+    encoder: "encoder.int8.onnx",
+    decoder: "decoder.int8.onnx",
+    joiner: None,
+    tokens: "tokens.txt",
+};
+
+/// Bilingual EN+ZH streaming Paraformer (FunASR). ZH-leaning bilingual
+/// alternative to the default Zipformer.
+pub const PARAFORMER_BILINGUAL_ZH_EN: ModelPreset = ModelPreset {
+    model_id: "csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en",
+    family: ModelFamily::Paraformer,
+    encoder: "encoder.int8.onnx",
+    decoder: "decoder.int8.onnx",
+    joiner: None,
+    tokens: "tokens.txt",
+};
 
 /// Decoding method passed through to sherpa-onnx.
 #[derive(Debug, Clone, Copy)]
@@ -73,6 +139,10 @@ impl DecodingMethod {
 
 /// Configuration for [`SherpaOnnxAsr`].
 ///
+/// Most users want [`SherpaOnnxConfig::from_preset`] to pick one of the
+/// bundled [`ModelPreset`] constants. Fields are exposed for downstream
+/// crates that want non-bundled checkpoints.
+///
 /// Resolution order for the model files:
 /// 1. `model_dir` if `Some` — files are looked up under it by the
 ///    `*_filename` fields.
@@ -81,17 +151,19 @@ impl DecodingMethod {
 /// 3. HuggingFace Hub — fetched from `model_id` into hf-hub's cache.
 #[derive(Debug, Clone)]
 pub struct SherpaOnnxConfig {
-    /// Directory containing the four model files. If `None`, falls back
-    /// to the env var, then HuggingFace.
+    /// Directory containing the model files. If `None`, falls back to
+    /// the env var, then HuggingFace.
     pub model_dir: Option<PathBuf>,
     /// HuggingFace repo id used when no local directory is found.
     pub model_id: String,
+    /// Architecture family — determines which sherpa-onnx config slot is used.
+    pub family: ModelFamily,
     /// Encoder filename inside the model directory / HF repo.
     pub encoder_filename: String,
     /// Decoder filename inside the model directory / HF repo.
     pub decoder_filename: String,
-    /// Joiner filename inside the model directory / HF repo.
-    pub joiner_filename: String,
+    /// Joiner filename. `Some` for transducers, `None` for Paraformer.
+    pub joiner_filename: Option<String>,
     /// Tokens filename inside the model directory / HF repo.
     pub tokens_filename: String,
     /// Number of threads for ONNX Runtime.
@@ -104,20 +176,30 @@ pub struct SherpaOnnxConfig {
     pub rule2_min_trailing_silence: f32,
 }
 
-impl Default for SherpaOnnxConfig {
-    fn default() -> Self {
+impl SherpaOnnxConfig {
+    /// Build a config from one of the bundled [`ModelPreset`] constants.
+    /// All other fields are filled with sensible defaults.
+    pub fn from_preset(preset: ModelPreset) -> Self {
         Self {
             model_dir: None,
-            model_id: DEFAULT_MODEL_ID.to_string(),
-            encoder_filename: DEFAULT_ENCODER.to_string(),
-            decoder_filename: DEFAULT_DECODER.to_string(),
-            joiner_filename: DEFAULT_JOINER.to_string(),
-            tokens_filename: DEFAULT_TOKENS.to_string(),
+            model_id: preset.model_id.to_string(),
+            family: preset.family,
+            encoder_filename: preset.encoder.to_string(),
+            decoder_filename: preset.decoder.to_string(),
+            joiner_filename: preset.joiner.map(str::to_string),
+            tokens_filename: preset.tokens.to_string(),
             num_threads: 2,
             decoding_method: DecodingMethod::Greedy,
             enable_endpoint: true,
             rule2_min_trailing_silence: 0.8,
         }
+    }
+}
+
+impl Default for SherpaOnnxConfig {
+    /// Defaults to the bilingual EN+ZH Zipformer ([`BILINGUAL_ZH_EN`]).
+    fn default() -> Self {
+        Self::from_preset(BILINGUAL_ZH_EN.clone())
     }
 }
 
@@ -144,9 +226,16 @@ pub struct SherpaOnnxAsr {
 
 impl SherpaOnnxAsr {
     /// Construct a session with default config (auto-downloads the
-    /// bilingual EN+ZH model from HuggingFace if not cached).
+    /// bilingual EN+ZH Zipformer from HuggingFace if not cached).
     pub fn new() -> Result<(Self, Receiver<TranscriptEvent>), AsrError> {
         Self::with_config(SherpaOnnxConfig::default())
+    }
+
+    /// Construct a session from one of the bundled [`ModelPreset`]s.
+    pub fn with_preset(
+        preset: ModelPreset,
+    ) -> Result<(Self, Receiver<TranscriptEvent>), AsrError> {
+        Self::with_config(SherpaOnnxConfig::from_preset(preset))
     }
 
     /// Construct a session with the given config.
@@ -155,13 +244,35 @@ impl SherpaOnnxAsr {
     ) -> Result<(Self, Receiver<TranscriptEvent>), AsrError> {
         let files = resolve_model_files(&config)?;
 
-        let sys_config = OnlineRecognizerConfig {
-            model_config: OnlineModelConfig {
-                transducer: OnlineTransducerModelConfig {
+        let (transducer, paraformer) = match config.family {
+            ModelFamily::Transducer => {
+                let joiner = files.joiner.as_ref().ok_or_else(|| {
+                    AsrError::Backend(
+                        "transducer model family requires a joiner file".into(),
+                    )
+                })?;
+                (
+                    OnlineTransducerModelConfig {
+                        encoder: Some(path_to_string(&files.encoder)?),
+                        decoder: Some(path_to_string(&files.decoder)?),
+                        joiner: Some(path_to_string(joiner)?),
+                    },
+                    OnlineParaformerModelConfig::default(),
+                )
+            }
+            ModelFamily::Paraformer => (
+                OnlineTransducerModelConfig::default(),
+                OnlineParaformerModelConfig {
                     encoder: Some(path_to_string(&files.encoder)?),
                     decoder: Some(path_to_string(&files.decoder)?),
-                    joiner: Some(path_to_string(&files.joiner)?),
                 },
+            ),
+        };
+
+        let sys_config = OnlineRecognizerConfig {
+            model_config: OnlineModelConfig {
+                transducer,
+                paraformer,
                 tokens: Some(path_to_string(&files.tokens)?),
                 num_threads: config.num_threads.max(1),
                 provider: Some("cpu".to_string()),
@@ -293,7 +404,8 @@ impl StreamingAsr for SherpaOnnxAsr {
 struct ModelFiles {
     encoder: PathBuf,
     decoder: PathBuf,
-    joiner: PathBuf,
+    /// `Some` for transducer family, `None` for Paraformer.
+    joiner: Option<PathBuf>,
     tokens: PathBuf,
 }
 
@@ -318,10 +430,19 @@ fn load_from_dir(dir: &Path, config: &SherpaOnnxConfig) -> Result<ModelFiles, As
         }
         Ok(path)
     };
+    let joiner = match (&config.joiner_filename, config.family) {
+        (Some(name), ModelFamily::Transducer) => Some(resolve(name)?),
+        (_, ModelFamily::Paraformer) => None,
+        (None, ModelFamily::Transducer) => {
+            return Err(AsrError::Backend(
+                "transducer family requires joiner_filename".into(),
+            ))
+        }
+    };
     Ok(ModelFiles {
         encoder: resolve(&config.encoder_filename)?,
         decoder: resolve(&config.decoder_filename)?,
-        joiner: resolve(&config.joiner_filename)?,
+        joiner,
         tokens: resolve(&config.tokens_filename)?,
     })
 }
@@ -337,10 +458,19 @@ fn download_from_hf(config: &SherpaOnnxConfig) -> Result<ModelFiles, AsrError> {
         repo.get(name)
             .map_err(|e| AsrError::Backend(format!("hf-hub download of {name} failed: {e}")))
     };
+    let joiner = match (&config.joiner_filename, config.family) {
+        (Some(name), ModelFamily::Transducer) => Some(fetch(name)?),
+        (_, ModelFamily::Paraformer) => None,
+        (None, ModelFamily::Transducer) => {
+            return Err(AsrError::Backend(
+                "transducer family requires joiner_filename".into(),
+            ))
+        }
+    };
     Ok(ModelFiles {
         encoder: fetch(&config.encoder_filename)?,
         decoder: fetch(&config.decoder_filename)?,
-        joiner: fetch(&config.joiner_filename)?,
+        joiner,
         tokens: fetch(&config.tokens_filename)?,
     })
 }
@@ -356,11 +486,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_uses_bilingual_model() {
+    fn default_config_uses_bilingual_zipformer() {
         let cfg = SherpaOnnxConfig::default();
-        assert_eq!(cfg.model_id, DEFAULT_MODEL_ID);
-        assert_eq!(cfg.encoder_filename, DEFAULT_ENCODER);
+        assert_eq!(cfg.model_id, BILINGUAL_ZH_EN.model_id);
+        assert_eq!(cfg.family, ModelFamily::Transducer);
+        assert_eq!(cfg.encoder_filename, BILINGUAL_ZH_EN.encoder);
+        assert_eq!(
+            cfg.joiner_filename.as_deref(),
+            Some(BILINGUAL_ZH_EN.joiner.unwrap())
+        );
         assert!(cfg.enable_endpoint);
+    }
+
+    #[test]
+    fn paraformer_preset_has_no_joiner() {
+        let cfg = SherpaOnnxConfig::from_preset(PARAFORMER_ZH);
+        assert_eq!(cfg.family, ModelFamily::Paraformer);
+        assert!(cfg.joiner_filename.is_none());
     }
 
     #[test]
