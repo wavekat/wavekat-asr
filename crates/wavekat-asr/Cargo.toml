@@ -17,14 +17,34 @@ default = []
 # Mock backend that emits canned transcript events. Useful for
 # downstream integration tests against the trait surface.
 mock = []
+# Local streaming backend wrapping sherpa-onnx around a streaming
+# Zipformer transducer. Auto-downloads the default bilingual EN+ZH
+# model from HuggingFace on first use.
+sherpa-onnx = ["dep:sherpa-onnx", "dep:hf-hub"]
 
 [dependencies]
-wavekat-core = "0.0.7"
+wavekat-core = "0.0.8"
 thiserror = "2"
 tracing = "0.1"
 
+sherpa-onnx = { version = "1.13", optional = true }
+hf-hub = { version = "0.5", default-features = false, features = ["ureq", "native-tls"], optional = true }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "time", "sync"] }
+wavekat-core = { version = "0.0.8", features = ["wav", "resample"] }
+# (dev-deps override main's wavekat-core to add `wav`/`resample` features
+# for the example binaries; the library itself does not need them in 0.0.2.)
+cpal = "0.17"
+ctrlc = "3.5"
+
+[[example]]
+name = "transcribe_wav"
+required-features = ["sherpa-onnx"]
+
+[[example]]
+name = "transcribe_mic"
+required-features = ["sherpa-onnx"]
 
 [package.metadata.docs.rs]
 all-features = true

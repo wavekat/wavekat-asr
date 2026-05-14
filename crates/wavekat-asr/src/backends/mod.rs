@@ -5,3 +5,6 @@
 
 #[cfg(feature = "mock")]
 pub mod mock;
+
+#[cfg(feature = "sherpa-onnx")]
+pub mod sherpa_onnx;

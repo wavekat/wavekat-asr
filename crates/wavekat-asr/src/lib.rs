@@ -97,4 +97,11 @@ pub trait StreamingAsr: Send {
     /// audio and emit a terminal [`Final`](TranscriptEvent::Final) per
     /// channel where applicable.
     fn finish(&mut self) -> Result<(), AsrError>;
+
+    /// Reset per-channel utterance state.
+    ///
+    /// Cheap on local backends; network-backed backends may drop and
+    /// recreate their socket. The contract is only that the next
+    /// `push_audio(frame, channel)` starts a fresh utterance on `channel`.
+    fn reset(&mut self, channel: Channel) -> Result<(), AsrError>;
 }

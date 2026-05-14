@@ -79,6 +79,10 @@ impl StreamingAsr for MockAsr {
         });
         Ok(())
     }
+
+    fn reset(&mut self, _channel: Channel) -> Result<(), AsrError> {
+        Ok(())
+    }
 }
 
 fn default_script() -> Vec<TranscriptEvent> {
