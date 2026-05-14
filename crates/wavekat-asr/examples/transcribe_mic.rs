@@ -169,9 +169,7 @@ fn pick_preset() -> ModelPreset {
         "zh" | "chinese" | "paraformer-zh" => PARAFORMER_ZH,
         "paraformer-zh-en" | "paraformer-bilingual" => PARAFORMER_BILINGUAL_ZH_EN,
         other => {
-            eprintln!(
-                "unknown WAVEKAT_ASR_PRESET `{other}`; falling back to `bilingual`"
-            );
+            eprintln!("unknown WAVEKAT_ASR_PRESET `{other}`; falling back to `bilingual`");
             BILINGUAL_ZH_EN
         }
     }
@@ -194,8 +192,8 @@ fn drain(rx: &Receiver<TranscriptEvent>) {
                 println!("\r\x1b[2K[{ts_ms:>6}-{end_ms:<6} ms] {text}");
             }
             Ok(TranscriptEvent::Warning(msg)) => eprintln!("warning: {msg}"),
-            Ok(TranscriptEvent::SpeechStarted { .. })
-            | Ok(TranscriptEvent::SpeechEnded { .. }) => {}
+            Ok(TranscriptEvent::SpeechStarted { .. }) | Ok(TranscriptEvent::SpeechEnded { .. }) => {
+            }
             Err(TryRecvError::Empty) => return,
             Err(TryRecvError::Disconnected) => return,
         }

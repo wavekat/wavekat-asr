@@ -232,9 +232,7 @@ impl SherpaOnnxAsr {
     }
 
     /// Construct a session from one of the bundled [`ModelPreset`]s.
-    pub fn with_preset(
-        preset: ModelPreset,
-    ) -> Result<(Self, Receiver<TranscriptEvent>), AsrError> {
+    pub fn with_preset(preset: ModelPreset) -> Result<(Self, Receiver<TranscriptEvent>), AsrError> {
         Self::with_config(SherpaOnnxConfig::from_preset(preset))
     }
 
@@ -247,9 +245,7 @@ impl SherpaOnnxAsr {
         let (transducer, paraformer) = match config.family {
             ModelFamily::Transducer => {
                 let joiner = files.joiner.as_ref().ok_or_else(|| {
-                    AsrError::Backend(
-                        "transducer model family requires a joiner file".into(),
-                    )
+                    AsrError::Backend("transducer model family requires a joiner file".into())
                 })?;
                 (
                     OnlineTransducerModelConfig {
@@ -450,8 +446,7 @@ fn load_from_dir(dir: &Path, config: &SherpaOnnxConfig) -> Result<ModelFiles, As
 fn download_from_hf(config: &SherpaOnnxConfig) -> Result<ModelFiles, AsrError> {
     use hf_hub::api::sync::Api;
 
-    let api = Api::new()
-        .map_err(|e| AsrError::Backend(format!("hf-hub init failed: {e}")))?;
+    let api = Api::new().map_err(|e| AsrError::Backend(format!("hf-hub init failed: {e}")))?;
     let repo = api.model(config.model_id.clone());
     let fetch = |name: &str| -> Result<PathBuf, AsrError> {
         tracing::debug!(model_id = %config.model_id, file = name, "fetching from HuggingFace");
