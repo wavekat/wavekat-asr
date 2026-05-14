@@ -106,9 +106,8 @@ resampling, network state, and tokenizer.
                                   on Receiver       └───────────┘
 ```
 
-Why sync push + receiver, rather than `async fn`? The daemon that will
-consume this ([`wavekat-voice`](https://github.com/wavekat/wavekat-voice))
-already runs an event loop and fans events out over SSE; matching that
+Why sync push + receiver, rather than `async fn`? The intended consumer
+already runs an event loop and fans events out to clients; matching that
 shape avoids forcing a tokio runtime through the trait. Backends that
 need their own runtime spawn one internally.
 

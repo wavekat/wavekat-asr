@@ -8,9 +8,9 @@
 ## Goal
 
 Stand up a single-purpose `wavekat-asr` crate that gives downstream
-voice pipelines (first consumer: [`wavekat-voice`](https://github.com/wavekat/wavekat-voice))
-a stable abstraction over speech-to-text backends, matching the pattern
-set by [`wavekat-vad`](https://github.com/wavekat/wavekat-vad) and
+voice pipelines a stable abstraction over speech-to-text backends,
+matching the pattern set by
+[`wavekat-vad`](https://github.com/wavekat/wavekat-vad) and
 [`wavekat-turn`](https://github.com/wavekat/wavekat-turn).
 
 This doc captures what `0.0.1` actually ships and what's left open. It
@@ -76,10 +76,9 @@ These need answers before we ship a real backend behind its own feature:
 
 ---
 
-## Why a separate repo, not a crate inside `wavekat-voice`
+## Why a separate repo, not bundled into a daemon
 
 Same reasoning as the existing sibling crates: each WaveKat voice
 primitive lives in its own repo, releases on its own cadence via
-release-plz, and is consumable by any third party without pulling in our
-daemon. The split is deliberate — see the table in
-`wavekat-voice/CLAUDE.md`.
+release-plz, and is consumable by any third party without pulling in a
+larger daemon.
