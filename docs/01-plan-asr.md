@@ -1,84 +1,51 @@
-# 01 — Plan: streaming ASR trait
+# 01 — Streaming ASR trait: design notes
 
-**Status:** Scaffold landed; mock backend removed once sherpa-onnx shipped (see [03-sherpa-onnx-backend.md](03-sherpa-onnx-backend.md))
-**Date:** 2026-05-14
+Historical planning note from the scaffold landing on 2026-05-14. Kept for
+context on why the trait surface looks the way it does. For the live
+trait reference, read the rustdoc on
+[`StreamingAsr`](https://docs.rs/wavekat-asr/latest/wavekat_asr/trait.StreamingAsr.html).
 
 ---
 
-## Goal
+## What this crate is
 
-Stand up a single-purpose `wavekat-asr` crate that gives downstream
-voice pipelines a stable abstraction over speech-to-text backends,
-matching the pattern set by
+A single-purpose Rust crate exposing one trait, `StreamingAsr`, and a
+small event vocabulary (`TranscriptEvent`, `Channel`, `AsrError`).
+Backends live behind Cargo features so dependants pull in only what they
+ship. Same pattern as
 [`wavekat-vad`](https://github.com/wavekat/wavekat-vad) and
 [`wavekat-turn`](https://github.com/wavekat/wavekat-turn).
 
-This doc captures what `0.0.1` actually ships and what's left open. It
-deliberately does **not** commit to a specific backend roadmap — we'll
-add that doc when we pick the first real backend to build.
+## What this crate is not
 
----
+- Not an ASR model. Backends wrap upstream work; we don't publish our
+  own checkpoints.
+- Not a stability promise yet. `0.0.x` will iterate as more backends
+  land — pin to an exact patch version.
+- Not a benchmarking framework. One will follow once there's more than
+  one real backend to compare.
 
-## What 0.0.1 ships
+## Why a separate repo
 
-- The `StreamingAsr` trait — `push_audio(&frame, channel)` + `finish()`.
-- The `TranscriptEvent` enum — `SpeechStarted`, `SpeechEnded`, `Partial`,
-  `Final`, `Warning`.
-- The `Channel` enum — `Local` vs `Remote`, so a single ASR instance can
-  serve both sides of a call.
-- The `AsrError` enum (thiserror).
-- A `mock` backend that emitted a scripted sequence of events on each
-  `push_audio` call. Pairs the impl with a `std::sync::mpsc::Receiver`.
-  (Removed after the sherpa-onnx backend landed — see [03-sherpa-onnx-backend.md](03-sherpa-onnx-backend.md).)
-- Workspace + CI + release-plz wired up so subsequent versions cut
-  themselves on merge to `main`.
+Each WaveKat voice primitive lives in its own repo, releases on its own
+cadence via release-plz, and is consumable by any third party without
+pulling in a larger daemon.
 
-That's everything. No real backends, no network code, no model code, no
-resamplers.
+## Open questions left to future backends
 
----
+The current trait was shaped against the sherpa-onnx backend
+([`docs/03`](03-sherpa-onnx-backend.md)). Real commercial backends
+([`docs/04`](04-commercial-backends.md)) will pressure-test it on:
 
-## Open questions for the first real backend
-
-These need answers before we ship a real backend behind its own feature:
-
-1. **Channel multiplexing.** One session per `Channel` (cleanest,
-   doubles cost) or one bidirectional session with multichannel input
-   (cheaper, requires careful interleaving)? Depends on what the chosen
-   backend supports.
+1. **Channel multiplexing.** One session per `Channel`, or one
+   bidirectional session with multichannel input? Depends on backend
+   support.
 2. **Backpressure.** `push_audio` returns `Ok(())` synchronously today.
-   If a backend's transport falls behind, we either need to buffer
-   internally (memory growth) or surface a backpressure signal on the
-   trait. Watch what real traffic does first.
-3. **Reset semantics.** No `reset()` on the trait yet. When a call ends
-   and a new one starts, the daemon currently has to drop and recreate
-   the `StreamingAsr`. Acceptable for lightweight backends; expensive
-   for ones that load big models on construction.
-4. **Configuration shape.** Each backend will need its own constructor
-   (`SherpaOnnxAsr::new()`, `XxxAsr::new(XxxConfig)`, …). No common
-   builder trait yet — resist abstracting until at least two real
-   backends exist.
-5. **Confidence reporting.** Backends that don't report per-segment
-   confidence currently emit `1.0`. Alternative is `Option<f32>` — costs
-   ergonomics, gained accuracy. Decide when there's a backend that
-   actually has the data.
-
----
-
-## What this scaffold is **not** trying to do
-
-- Re-implement an ASR model. The point of multiple backends is to wrap
-  upstream work, not to publish our own.
-- Live up to a stability promise yet. `0.0.x` will iterate fast.
-- Define a benchmarking framework. We'll add one (mirroring
-  `wavekat-vad`'s benchmark table) once there's something to compare.
-- Promise any specific backend on a timeline.
-
----
-
-## Why a separate repo, not bundled into a daemon
-
-Same reasoning as the existing sibling crates: each WaveKat voice
-primitive lives in its own repo, releases on its own cadence via
-release-plz, and is consumable by any third party without pulling in a
-larger daemon.
+   Network backends that fall behind need either internal buffering or
+   a backpressure signal on the trait.
+3. **Configuration shape.** Each backend has its own constructor; no
+   common builder trait yet. Resist abstracting until at least two real
+   network backends exist.
+4. **Confidence reporting.** Backends without per-segment confidence
+   emit `1.0`. `Option<f32>` is the alternative — decide when a backend
+   that actually reports it lands.

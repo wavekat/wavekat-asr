@@ -152,6 +152,19 @@ WAVEKAT_ASR_PRESET=en cargo run --release --example transcribe_mic --features sh
 |------|---------|-------------|
 | `sherpa-onnx` | No | Local streaming Zipformer / Paraformer via sherpa-onnx; pulls in `hf-hub` for first-run model download |
 
+## Building from source
+
+Enabling `sherpa-onnx` pulls in `sherpa-onnx-sys`, which builds vendored
+ONNX Runtime through CMake. You'll need:
+
+- A C++ toolchain (`clang` or `gcc`) and `cmake` on PATH.
+- **Linux only — and only for the `transcribe_mic` example:** ALSA dev
+  headers (`libasound2-dev` on Debian/Ubuntu, `alsa-lib-devel` on Fedora).
+  The library itself has no system audio dependency.
+
+The first build of `sherpa-onnx-sys` is slow (5–10 min); subsequent
+builds are cached by Cargo.
+
 ## Important notes
 
 - **Sample rate.** The `StreamingAsr` trait accepts any `AudioFrame`
