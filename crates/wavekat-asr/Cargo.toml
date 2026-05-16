@@ -20,7 +20,7 @@ default = []
 sherpa-onnx = ["dep:sherpa-onnx", "dep:hf-hub"]
 
 [dependencies]
-wavekat-core = "0.0.8"
+wavekat-core = "0.0.11"
 thiserror = "2"
 tracing = "0.1"
 
@@ -29,7 +29,7 @@ hf-hub = { version = "0.5", default-features = false, features = ["ureq", "nativ
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "time", "sync"] }
-wavekat-core = { version = "0.0.8", features = ["wav", "resample"] }
+wavekat-core = { version = "0.0.11", features = ["wav", "resample"] }
 # Dev-deps override main's wavekat-core to add `wav`/`resample` features
 # for the example binaries; the library itself does not need them.
 cpal = "0.17"
