@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5](https://github.com/wavekat/wavekat-asr/compare/v0.0.4...v0.0.5) - 2026-05-16
+
+### Added
+
+- backend-agnostic HF download helper with byte progress ([#10](https://github.com/wavekat/wavekat-asr/pull/10))
+
+### Other
+
+- *(deps)* bump wavekat-core to 0.0.11 ([#8](https://github.com/wavekat/wavekat-asr/pull/8))
+
 ## [0.0.4](https://github.com/wavekat/wavekat-asr/compare/v0.0.3...v0.0.4) - 2026-05-14
 
 ### Other
