@@ -75,6 +75,22 @@ pub struct ModelPreset {
     pub tokens: &'static str,
 }
 
+impl ModelPreset {
+    /// Files this preset pulls from HuggingFace, in download order: encoder,
+    /// decoder, joiner (transducer only), tokens. Used by
+    /// [`download_preset_with_progress`] to drive the per-file callback.
+    pub fn files(&self) -> Vec<&'static str> {
+        let mut files = Vec::with_capacity(4);
+        files.push(self.encoder);
+        files.push(self.decoder);
+        if let Some(joiner) = self.joiner {
+            files.push(joiner);
+        }
+        files.push(self.tokens);
+        files
+    }
+}
+
 /// Bilingual EN+ZH streaming Zipformer (default). Handles mixed-language
 /// speech but can over-produce Hanzi for English-only audio.
 pub const BILINGUAL_ZH_EN: ModelPreset = ModelPreset {
@@ -470,6 +486,31 @@ fn download_from_hf(config: &SherpaOnnxConfig) -> Result<ModelFiles, AsrError> {
     })
 }
 
+/// Re-exported here so callers reaching for the symbol via
+/// `backends::sherpa_onnx::DownloadProgress` get the same type they would
+/// from the crate root or from a future backend's preset downloader.
+pub use crate::download::DownloadProgress;
+
+/// Download every file `preset` needs from HuggingFace into `dest_dir`,
+/// reporting byte progress as it goes.
+///
+/// Thin wrapper over [`crate::download::download_files_with_progress`]
+/// that knows how to turn a [`ModelPreset`] into a `(repo_id, files)`
+/// pair. On success, `dest_dir` contains all files named by
+/// [`ModelPreset::files`] and is directly loadable via
+/// `SherpaOnnxConfig { model_dir: Some(dest_dir.into()), .. }`.
+pub fn download_preset_with_progress<F>(
+    preset: ModelPreset,
+    dest_dir: &Path,
+    on_progress: F,
+) -> Result<(), AsrError>
+where
+    F: FnMut(DownloadProgress),
+{
+    let files = preset.files();
+    crate::download::download_files_with_progress(preset.model_id, &files, dest_dir, on_progress)
+}
+
 fn path_to_string(path: &Path) -> Result<String, AsrError> {
     path.to_str()
         .map(|s| s.to_string())
@@ -498,6 +539,25 @@ mod tests {
         let cfg = SherpaOnnxConfig::from_preset(PARAFORMER_ZH);
         assert_eq!(cfg.family, ModelFamily::Paraformer);
         assert!(cfg.joiner_filename.is_none());
+    }
+
+    #[test]
+    fn preset_files_transducer_includes_joiner() {
+        let files = BILINGUAL_ZH_EN.files();
+        assert_eq!(files.len(), 4);
+        assert_eq!(files[0], BILINGUAL_ZH_EN.encoder);
+        assert_eq!(files[1], BILINGUAL_ZH_EN.decoder);
+        assert_eq!(files[2], BILINGUAL_ZH_EN.joiner.unwrap());
+        assert_eq!(files[3], BILINGUAL_ZH_EN.tokens);
+    }
+
+    #[test]
+    fn preset_files_paraformer_omits_joiner() {
+        let files = PARAFORMER_ZH.files();
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0], PARAFORMER_ZH.encoder);
+        assert_eq!(files[1], PARAFORMER_ZH.decoder);
+        assert_eq!(files[2], PARAFORMER_ZH.tokens);
     }
 
     #[test]

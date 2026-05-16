@@ -17,8 +17,12 @@
 //! auto-downloads its model from HuggingFace on first use.
 
 pub mod backends;
+#[cfg(feature = "download")]
+pub mod download;
 pub mod error;
 
+#[cfg(feature = "download")]
+pub use download::DownloadProgress;
 pub use error::AsrError;
 pub use wavekat_core::AudioFrame;
 
