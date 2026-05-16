@@ -14,10 +14,15 @@ exclude = ["CHANGELOG.md"]
 
 [features]
 default = []
+# Generic HuggingFace download helper with byte-level progress
+# reporting. Used by any backend whose model files live on HF Hub;
+# enabled transitively by such backends so callers usually don't
+# turn it on directly.
+download = ["dep:hf-hub"]
 # Local streaming backend wrapping sherpa-onnx around a streaming
 # Zipformer transducer. Auto-downloads the default bilingual EN+ZH
 # model from HuggingFace on first use.
-sherpa-onnx = ["dep:sherpa-onnx", "dep:hf-hub"]
+sherpa-onnx = ["dep:sherpa-onnx", "download"]
 
 [dependencies]
 wavekat-core = "0.0.11"
