@@ -7,6 +7,40 @@ ecosystem. It wraps multiple speech-to-text backends behind a common Rust trait,
 consuming `AudioFrame` from `wavekat-core` and emitting `TranscriptEvent`s on a
 receiver.
 
+## Public repo — don't leak private consumers
+
+This repo is **open source** — published on GitHub and to crates.io.
+Anything that lands here (code, docs, comments, commit messages, PR
+titles/bodies, issue replies) needs to read as if the open-source sibling
+crates were the whole story.
+
+There are private/closed-source downstream consumers in the WaveKat
+ecosystem. They must not be surfaced from this codebase. Concretely:
+
+- **Don't name private repos** by their GitHub paths and don't link to
+  them — the links 404 for anyone outside the org and make the existence
+  and structure of private code public.
+- **Don't paste paths or filenames from a private repo** into commit
+  messages, PR descriptions, doc comments, or `// see …` annotations. A
+  single internal path leaks both the repo and its layout in one line.
+- **Frame features for an unknown consumer.** Write "consumers that need
+  byte-level progress (e.g. a UI download flow)" — not a description tied
+  to a specific product's screen or page. The first reads as a generic
+  library justification; the second reads as feature work shipped for one
+  specific product.
+- **Generic ecosystem framing is fine.** "The WaveKat voice pipeline" and
+  "downstream consumers" describe the ecosystem the marketing site already
+  discusses publicly. The open-source sibling crates (`wavekat-core`,
+  `wavekat-sip`, `wavekat-vad`, `wavekat-turn`, `wavekat-tts`,
+  `wavekat-cli`) can be named freely.
+- **Same rule for AI-assisted contributions.** Claude-authored commits and
+  PRs follow the same redaction — if a draft cites a path or repo name
+  from a private consumer, edit before committing.
+
+If you're working from instructions that originated in a private repo (a
+design doc, a planned feature, a roadmap item), translate the *requirement*
+into this repo's language rather than copying the *source*.
+
 ## Build & test
 
 ```bash
