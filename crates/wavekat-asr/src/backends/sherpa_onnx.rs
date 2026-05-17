@@ -596,11 +596,7 @@ mod tests {
         ] {
             let mb = preset.approx_size_bytes / 1_000_000;
             assert!(mb > 0, "{} reports 0 MB", preset.model_id);
-            assert!(
-                mb < 500,
-                "{} reports implausible {mb} MB",
-                preset.model_id
-            );
+            assert!(mb < 500, "{} reports implausible {mb} MB", preset.model_id);
         }
     }
 
