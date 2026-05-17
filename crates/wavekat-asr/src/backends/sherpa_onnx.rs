@@ -89,6 +89,17 @@ impl ModelPreset {
         files.push(self.tokens);
         files
     }
+
+    /// Returns `true` iff every file this preset declares is already
+    /// in the local HuggingFace Hub cache. Pure-filesystem; no network.
+    /// Convenience wrapper around [`crate::download::is_repo_cached`].
+    ///
+    /// Use to decide whether a UI should render a "Download" affordance
+    /// (returns `false`) or a "Ready" indicator (returns `true`)
+    /// without risking a silent download on a cold cache.
+    pub fn is_cached(&self) -> bool {
+        crate::download::is_repo_cached(self.model_id, &self.files())
+    }
 }
 
 /// Bilingual EN+ZH streaming Zipformer (default). Handles mixed-language
