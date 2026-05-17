@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Run the fast subset of the CI chain before pushing. Catches fmt + clippy +
+# cargo test failures locally so they don't burn a CI cycle. The full chain
+# (no-default-features build, doc gen) still only runs in CI — see `make ci`
+# if you want full parity.
+#
+# Install once:   make hooks
+# Bypass:         git push --no-verify
+set -euo pipefail
+
+# Drain stdin (git sends `<local_ref> <local_sha> <remote_ref> <remote_sha>`
+# per ref being pushed) so the hook doesn't deadlock on systems where stdin
+# stays open. We don't need to inspect the refs.
+cat >/dev/null
+
+echo "▸ make ci-fast (pre-push)"
+exec make ci-fast

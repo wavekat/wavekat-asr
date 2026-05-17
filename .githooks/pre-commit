@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Lite pre-commit checks. Heavier checks (clippy, cargo test, doc) run on
+# pre-push and in CI — see .github/workflows/ci.yml.
+#
+# Install once:   make hooks
+# Bypass:         git commit --no-verify
+set -euo pipefail
+
+# Only look at files that are actually staged for this commit.
+staged() { git diff --cached --name-only --diff-filter=ACMR -- "$@"; }
+
+rust_files=$(staged '*.rs')
+
+fail=0
+
+if [ -n "$rust_files" ]; then
+  echo "▸ cargo fmt --check"
+  if ! cargo fmt --all -- --check; then
+    echo
+    echo "  Rust formatting check failed. Fix with: make fmt"
+    fail=1
+  fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "Pre-commit checks failed. Re-run after fixing, or bypass with --no-verify."
+  exit 1
+fi
