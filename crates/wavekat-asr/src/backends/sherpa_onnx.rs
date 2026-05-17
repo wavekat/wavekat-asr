@@ -73,6 +73,13 @@ pub struct ModelPreset {
     pub joiner: Option<&'static str>,
     /// Tokens filename.
     pub tokens: &'static str,
+    /// Approximate total on-disk size of the files this preset pulls
+    /// from HuggingFace, in bytes. Static estimate baked from the
+    /// repo's published `LFS` file sizes (~5 MB rounding) — not
+    /// measured per-machine. Useful for consumers that want to show
+    /// a "Download (~N MB)" label before kicking off a fetch; for a
+    /// precise post-download size, walk the cache directory.
+    pub approx_size_bytes: u64,
 }
 
 impl ModelPreset {
@@ -111,6 +118,7 @@ pub const BILINGUAL_ZH_EN: ModelPreset = ModelPreset {
     decoder: "decoder-epoch-99-avg-1.onnx",
     joiner: Some("joiner-epoch-99-avg-1.int8.onnx"),
     tokens: "tokens.txt",
+    approx_size_bytes: 85 * 1_000_000,
 };
 
 /// English-only streaming Zipformer. Best WER on English; will hallucinate
@@ -122,6 +130,7 @@ pub const ZIPFORMER_EN: ModelPreset = ModelPreset {
     decoder: "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
     joiner: Some("joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx"),
     tokens: "tokens.txt",
+    approx_size_bytes: 110 * 1_000_000,
 };
 
 /// Chinese-only streaming Paraformer (FunASR). Often beats the bilingual
@@ -133,6 +142,7 @@ pub const PARAFORMER_ZH: ModelPreset = ModelPreset {
     decoder: "decoder.int8.onnx",
     joiner: None,
     tokens: "tokens.txt",
+    approx_size_bytes: 75 * 1_000_000,
 };
 
 /// Bilingual EN+ZH streaming Paraformer (FunASR). ZH-leaning bilingual
@@ -144,6 +154,7 @@ pub const PARAFORMER_BILINGUAL_ZH_EN: ModelPreset = ModelPreset {
     decoder: "decoder.int8.onnx",
     joiner: None,
     tokens: "tokens.txt",
+    approx_size_bytes: 70 * 1_000_000,
 };
 
 /// Decoding method passed through to sherpa-onnx.
@@ -569,6 +580,28 @@ mod tests {
         assert_eq!(files[0], PARAFORMER_ZH.encoder);
         assert_eq!(files[1], PARAFORMER_ZH.decoder);
         assert_eq!(files[2], PARAFORMER_ZH.tokens);
+    }
+
+    #[test]
+    fn every_bundled_preset_declares_a_plausible_size() {
+        // Consumers render this as "Download (~N MB)" before kicking
+        // off the fetch — a zero is misleading and a four-digit MB
+        // number means someone pasted the wrong figure. Pin both
+        // ends so a new preset can't ship without a size.
+        for preset in [
+            &BILINGUAL_ZH_EN,
+            &ZIPFORMER_EN,
+            &PARAFORMER_ZH,
+            &PARAFORMER_BILINGUAL_ZH_EN,
+        ] {
+            let mb = preset.approx_size_bytes / 1_000_000;
+            assert!(mb > 0, "{} reports 0 MB", preset.model_id);
+            assert!(
+                mb < 500,
+                "{} reports implausible {mb} MB",
+                preset.model_id
+            );
+        }
     }
 
     #[test]
