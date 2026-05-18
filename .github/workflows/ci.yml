@@ -11,7 +11,7 @@ env:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, wavekat-ci]
     steps:
       - uses: actions/checkout@v6
       - name: Install ALSA dev headers
@@ -40,7 +40,7 @@ jobs:
           fi
 
   features:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, wavekat-ci]
     strategy:
       matrix:
         features:

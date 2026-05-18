@@ -7,7 +7,7 @@ on:
 
 jobs:
   release-plz-release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, wavekat-ci]
     permissions:
       contents: write
       pull-requests: read
@@ -27,7 +27,7 @@ jobs:
   release-plz-pr:
     needs: release-plz-release
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, wavekat-ci]
     permissions:
       contents: write
       pull-requests: write
