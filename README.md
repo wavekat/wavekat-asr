@@ -174,6 +174,15 @@ builds are cached by Cargo.
 - **Dual-channel routing.** `Channel::{Local, Remote}` is wired through
   the trait today; per-channel state isolation in sherpa-onnx is Phase 2.
 
+## Stars
+
+<a href="https://stars.wavekat.com/wavekat/wavekat-asr">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://stars.wavekat.com/wavekat/wavekat-asr/chart.svg?theme=dark">
+    <img alt="wavekat/wavekat-asr stars" src="https://stars.wavekat.com/wavekat/wavekat-asr/chart.svg?theme=light">
+  </picture>
+</a>
+
 ## License
 
 Licensed under [Apache 2.0](LICENSE).
