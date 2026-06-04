@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/wavekat/wavekat-asr/compare/v0.0.7...v0.0.8) - 2026-05-20
+
+### Other
+
+- add stars chart to README ([#17](https://github.com/wavekat/wavekat-asr/pull/17))
+
 ## [0.0.7](https://github.com/wavekat/wavekat-asr/compare/v0.0.6...v0.0.7) - 2026-05-17
 
 ### Added
