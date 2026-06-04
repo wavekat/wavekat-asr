@@ -8,7 +8,7 @@
 [![docs.rs](https://docs.rs/wavekat-asr/badge.svg)](https://docs.rs/wavekat-asr)
 [![CI](https://github.com/wavekat/wavekat-asr/actions/workflows/ci.yml/badge.svg)](https://github.com/wavekat/wavekat-asr/actions/workflows/ci.yml)
 
-Unified streaming speech-to-text for voice pipelines, wrapping multiple
+Unified streaming speech-to-text for [WaveKat](https://wavekat.com) voice pipelines, wrapping multiple
 ASR engines behind common Rust traits. Same pattern as
 [wavekat-vad](https://github.com/wavekat/wavekat-vad),
 [wavekat-turn](https://github.com/wavekat/wavekat-turn), and
@@ -173,6 +173,12 @@ builds are cached by Cargo.
   in a follow-up (see [`docs/03-sherpa-onnx-backend.md`](docs/03-sherpa-onnx-backend.md)).
 - **Dual-channel routing.** `Channel::{Local, Remote}` is wired through
   the trait today; per-channel state isolation in sherpa-onnx is Phase 2.
+
+## About WaveKat
+
+`wavekat-asr` is part of WaveKat, an open-source ecosystem of Rust crates for building real-time voice pipelines. It handles streaming speech-to-text, alongside sibling crates for voice activity detection, turn detection, and text-to-speech.
+
+See [wavekat.com](https://wavekat.com) for the full project.
 
 ## Stars
 
