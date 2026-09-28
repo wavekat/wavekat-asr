@@ -80,6 +80,13 @@ pub struct ModelPreset {
     /// a "Download (~N MB)" label before kicking off a fetch; for a
     /// precise post-download size, walk the cache directory.
     pub approx_size_bytes: u64,
+    /// HuggingFace commit the [`pinned_files`](Self::pinned_files) hashes
+    /// were taken from. Used by [`download_preset_to_cache`] so every
+    /// source serves byte-identical files.
+    pub revision: &'static str,
+    /// Size and SHA-256 of every file in [`files`](Self::files), in the
+    /// same order.
+    pub pinned_files: &'static [PinnedFile],
 }
 
 impl ModelPreset {
@@ -119,6 +126,29 @@ pub const BILINGUAL_ZH_EN: ModelPreset = ModelPreset {
     joiner: Some("joiner-epoch-99-avg-1.int8.onnx"),
     tokens: "tokens.txt",
     approx_size_bytes: 85 * 1_000_000,
+    revision: "98590b7ed6443e77b714204da2757d75e1a642f4",
+    pinned_files: &[
+        PinnedFile {
+            name: "encoder-epoch-99-avg-1.int8.onnx",
+            sha256: "8fa764187a261844f859d7143ebaa563af5d10adfece4c18a8f414c88cba2a9b",
+            size: 181895032,
+        },
+        PinnedFile {
+            name: "decoder-epoch-99-avg-1.onnx",
+            sha256: "2e3b5ec371f8899ee6acd829fd753ba45772df57a91bdf37cde3136354e7db7d",
+            size: 13876452,
+        },
+        PinnedFile {
+            name: "joiner-epoch-99-avg-1.int8.onnx",
+            sha256: "1ed689c5ed19dbaa725d9d191bb4822b5f4855a39e1ffd28cbc1f340d25b2ee0",
+            size: 3228404,
+        },
+        PinnedFile {
+            name: "tokens.txt",
+            sha256: "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3",
+            size: 56317,
+        },
+    ],
 };
 
 /// English-only streaming Zipformer. Best WER on English; will hallucinate
@@ -131,6 +161,29 @@ pub const ZIPFORMER_EN: ModelPreset = ModelPreset {
     joiner: Some("joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx"),
     tokens: "tokens.txt",
     approx_size_bytes: 110 * 1_000_000,
+    revision: "672fbf1b30579d6585301139bb363f42a0ad4a24",
+    pinned_files: &[
+        PinnedFile {
+            name: "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+            sha256: "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1",
+            size: 71083163,
+        },
+        PinnedFile {
+            name: "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+            sha256: "7bf787f90b194b307e5a4ad6a34fadb4e748304c35f78a8d66358a05b13ee6ef",
+            size: 2092621,
+        },
+        PinnedFile {
+            name: "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+            sha256: "d944208d660d67c8d72cd2acaeac971fa5ceb8c80e76c1968148846fedd6e297",
+            size: 259335,
+        },
+        PinnedFile {
+            name: "tokens.txt",
+            sha256: "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb",
+            size: 5048,
+        },
+    ],
 };
 
 /// Chinese-only streaming Paraformer (FunASR). Often beats the bilingual
@@ -143,6 +196,24 @@ pub const PARAFORMER_ZH: ModelPreset = ModelPreset {
     joiner: None,
     tokens: "tokens.txt",
     approx_size_bytes: 75 * 1_000_000,
+    revision: "2a7f71bb58885c1b522ed4e683abd397355d9fc4",
+    pinned_files: &[
+        PinnedFile {
+            name: "encoder.int8.onnx",
+            sha256: "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+            size: 165462184,
+        },
+        PinnedFile {
+            name: "decoder.int8.onnx",
+            sha256: "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+            size: 71664561,
+        },
+        PinnedFile {
+            name: "tokens.txt",
+            sha256: "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+            size: 75756,
+        },
+    ],
 };
 
 /// Bilingual EN+ZH streaming Paraformer (FunASR). ZH-leaning bilingual
@@ -155,6 +226,24 @@ pub const PARAFORMER_BILINGUAL_ZH_EN: ModelPreset = ModelPreset {
     joiner: None,
     tokens: "tokens.txt",
     approx_size_bytes: 70 * 1_000_000,
+    revision: "8e40c43232a1c5c66c82111efc5820d3accca11b",
+    pinned_files: &[
+        PinnedFile {
+            name: "encoder.int8.onnx",
+            sha256: "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a",
+            size: 165462184,
+        },
+        PinnedFile {
+            name: "decoder.int8.onnx",
+            sha256: "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f",
+            size: 71664561,
+        },
+        PinnedFile {
+            name: "tokens.txt",
+            sha256: "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
+            size: 75756,
+        },
+    ],
 };
 
 /// Decoding method passed through to sherpa-onnx.
@@ -508,10 +597,37 @@ fn download_from_hf(config: &SherpaOnnxConfig) -> Result<ModelFiles, AsrError> {
     })
 }
 
+/// Download every file `preset` needs, at its pinned
+/// [`revision`](ModelPreset::revision), into the local HuggingFace Hub
+/// cache — trying `sources` in order and verifying each file's SHA-256.
+///
+/// After this returns, [`ModelPreset::is_cached`] is `true` and the
+/// backend loads the model without network access. Pass
+/// `&[DownloadSource::hugging_face()]` for HuggingFace only, or append
+/// mirrors for networks where HuggingFace is unreachable. See
+/// [`crate::download::download_pinned_to_cache`] for the fallback rules.
+pub fn download_preset_to_cache<F>(
+    preset: &ModelPreset,
+    sources: &[DownloadSource],
+    on_progress: F,
+) -> Result<(), AsrError>
+where
+    F: FnMut(DownloadProgress),
+{
+    crate::download::download_pinned_to_cache(
+        preset.model_id,
+        preset.revision,
+        preset.pinned_files,
+        sources,
+        on_progress,
+    )
+    .map(|_| ())
+}
+
 /// Re-exported here so callers reaching for the symbol via
 /// `backends::sherpa_onnx::DownloadProgress` get the same type they would
 /// from the crate root or from a future backend's preset downloader.
-pub use crate::download::DownloadProgress;
+pub use crate::download::{DownloadProgress, DownloadSource, PinnedFile};
 
 /// Download every file `preset` needs from HuggingFace into `dest_dir`,
 /// reporting byte progress as it goes.
@@ -597,6 +713,29 @@ mod tests {
             let mb = preset.approx_size_bytes / 1_000_000;
             assert!(mb > 0, "{} reports 0 MB", preset.model_id);
             assert!(mb < 500, "{} reports implausible {mb} MB", preset.model_id);
+        }
+    }
+
+    #[test]
+    fn every_bundled_preset_pins_each_of_its_files() {
+        // `download_preset_to_cache` fetches `pinned_files`, while the
+        // cache probe and recognizer look for `files()`. If the two lists
+        // drift, a download "succeeds" and the model still reads as
+        // missing — so they must name the same files in the same order.
+        for preset in [
+            &BILINGUAL_ZH_EN,
+            &ZIPFORMER_EN,
+            &PARAFORMER_ZH,
+            &PARAFORMER_BILINGUAL_ZH_EN,
+        ] {
+            let pinned: Vec<&str> = preset.pinned_files.iter().map(|f| f.name).collect();
+            assert_eq!(pinned, preset.files(), "{}", preset.model_id);
+            assert_eq!(preset.revision.len(), 40, "{}", preset.model_id);
+            for f in preset.pinned_files {
+                assert_eq!(f.sha256.len(), 64, "{} {}", preset.model_id, f.name);
+                assert!(f.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
+                assert!(f.size > 0);
+            }
         }
     }
 

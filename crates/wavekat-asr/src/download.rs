@@ -16,6 +16,12 @@
 //! decide between rendering a "Download" affordance and a "Ready"
 //! state in a UI hot path.
 //!
+//! For networks where `huggingface.co` is unreachable,
+//! [`download_pinned_to_cache`] fetches a pinned snapshot from an
+//! ordered list of [`DownloadSource`]s (HuggingFace, or any mirror that
+//! serves the same `resolve` URL layout), verifies each file's SHA-256,
+//! and writes the result into the same cache `hf-hub` reads.
+//!
 //! Gated behind the `download` Cargo feature; the `sherpa-onnx` feature
 //! turns it on transitively.
 
@@ -176,6 +182,305 @@ impl<F: FnMut(DownloadProgress)> hf_hub::api::Progress for CallbackProgress<'_, 
     }
 }
 
+// ----- Pinned downloads from any HF-layout host ---------------------------
+
+/// One file of a pinned model snapshot: its name inside the repo plus
+/// the exact size and SHA-256 it must have.
+///
+/// Pinning makes a download verifiable independent of where the bytes
+/// came from, which is what lets [`download_pinned_to_cache`] fall back
+/// to a mirror without trusting it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PinnedFile {
+    /// Filename inside the repo.
+    pub name: &'static str,
+    /// Lowercase hex SHA-256 of the file's contents.
+    pub sha256: &'static str,
+    /// Exact size in bytes.
+    pub size: u64,
+}
+
+/// A host that serves repo files in the HuggingFace `resolve` layout:
+/// `{base_url}/{repo_id}/resolve/{revision}/{file}`.
+///
+/// HuggingFace itself is one such host; a mirror (a community one, or a
+/// static bucket populated with the same paths) is another. Useful for
+/// networks where `huggingface.co` is unreachable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadSource {
+    base_url: String,
+}
+
+impl DownloadSource {
+    /// Base URL of HuggingFace Hub.
+    pub const HUGGING_FACE_URL: &'static str = "https://huggingface.co";
+
+    /// HuggingFace Hub itself.
+    pub fn hugging_face() -> Self {
+        Self::mirror(Self::HUGGING_FACE_URL)
+    }
+
+    /// Any other host serving the HuggingFace `resolve` layout under
+    /// `base_url`. A trailing slash is ignored.
+    pub fn mirror(base_url: impl Into<String>) -> Self {
+        let base_url = base_url.into().trim_end_matches('/').to_string();
+        Self { base_url }
+    }
+
+    /// Base URL, without a trailing slash.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Full URL of `file` at `revision` in `repo_id` on this host.
+    pub fn file_url(&self, repo_id: &str, revision: &str, file: &str) -> String {
+        format!("{}/{repo_id}/resolve/{revision}/{file}", self.base_url)
+    }
+}
+
+/// How long to wait for a TCP/TLS connection before giving up on a
+/// source. Short on purpose: a blocked host should fall through to the
+/// next source quickly instead of stalling the download.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// How long to wait for response headers once connected.
+const RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Download a pinned snapshot of `repo_id` at `revision` into the local
+/// HuggingFace Hub cache, trying `sources` in order and verifying every
+/// file's size and SHA-256.
+///
+/// Files land where `hf-hub` itself would look for them
+/// (`<cache>/models--<owner>--<repo>/snapshots/<revision>/<file>`, with
+/// `refs/main` pointing at `revision`), so after this returns
+/// [`is_repo_cached`] reports `true` and a backend that resolves its
+/// files through `hf-hub` finds them without touching the network.
+///
+/// Source fallback is sticky: when a source fails (connection error,
+/// HTTP error, or a file that doesn't match its pin) the current file is
+/// retried from the next source, and later files start from that source
+/// too — a host that refused one connection is unlikely to accept the
+/// next. Files already present at their pinned size are skipped, so an
+/// interrupted run resumes at file granularity.
+///
+/// `on_progress` fires as in [`download_files_with_progress`];
+/// `bytes_total` is always the pinned size.
+pub fn download_pinned_to_cache<F>(
+    repo_id: &str,
+    revision: &str,
+    files: &[PinnedFile],
+    sources: &[DownloadSource],
+    on_progress: F,
+) -> Result<PathBuf, AsrError>
+where
+    F: FnMut(DownloadProgress),
+{
+    let cache_root = hf_hub_cache_root()
+        .ok_or_else(|| AsrError::Backend("cannot locate the HuggingFace cache directory".into()))?;
+    download_pinned_into(&cache_root, repo_id, revision, files, sources, on_progress)
+}
+
+/// [`download_pinned_to_cache`] against an explicit cache root, so tests
+/// can use a temp directory.
+fn download_pinned_into<F>(
+    cache_root: &Path,
+    repo_id: &str,
+    revision: &str,
+    files: &[PinnedFile],
+    sources: &[DownloadSource],
+    mut on_progress: F,
+) -> Result<PathBuf, AsrError>
+where
+    F: FnMut(DownloadProgress),
+{
+    let repo_dir = cache_root.join(repo_folder_name(repo_id));
+    let snapshot = repo_dir.join("snapshots").join(revision);
+    let file_count = files.len();
+    let agent = http_agent();
+    let mut source_idx = 0;
+    let mut failures: Vec<String> = Vec::new();
+
+    for (idx, file) in files.iter().enumerate() {
+        let dest = snapshot.join(file.name);
+        let emit = |on_progress: &mut F, bytes_done: u64| {
+            on_progress(DownloadProgress {
+                file: file.name.to_string(),
+                file_index: idx + 1,
+                file_count,
+                bytes_done,
+                bytes_total: Some(file.size),
+            })
+        };
+
+        if std::fs::metadata(&dest).is_ok_and(|m| m.is_file() && m.len() == file.size) {
+            emit(&mut on_progress, file.size);
+            continue;
+        }
+
+        loop {
+            let Some(source) = sources.get(source_idx) else {
+                return Err(AsrError::Backend(if failures.is_empty() {
+                    "no download source configured".to_string()
+                } else {
+                    format!(
+                        "download of {} failed from every source: {}",
+                        file.name,
+                        failures.join("; ")
+                    )
+                }));
+            };
+            let url = source.file_url(repo_id, revision, file.name);
+            tracing::debug!(
+                url,
+                file_index = idx + 1,
+                file_count,
+                "fetching pinned file"
+            );
+            match fetch_verified(&agent, &url, &dest, file, |done| {
+                emit(&mut on_progress, done)
+            }) {
+                Ok(()) => break,
+                Err(FetchError::Local(err)) => return Err(err),
+                Err(FetchError::Remote(msg)) => {
+                    tracing::warn!(url, error = %msg, "download source failed, trying the next one");
+                    failures.push(format!("{}: {msg}", source.base_url()));
+                    source_idx += 1;
+                }
+            }
+        }
+    }
+
+    let refs = repo_dir.join("refs");
+    std::fs::create_dir_all(&refs)?;
+    std::fs::write(refs.join("main"), revision)?;
+    Ok(snapshot)
+}
+
+/// Why fetching one file failed: the source's fault (try another one)
+/// or ours (a disk error that no other source would fix).
+#[derive(Debug)]
+enum FetchError {
+    Remote(String),
+    Local(AsrError),
+}
+
+impl From<std::io::Error> for FetchError {
+    fn from(err: std::io::Error) -> Self {
+        FetchError::Local(AsrError::Io(err))
+    }
+}
+
+/// Stream `url` into `dest` via a `.part` file, hashing as it goes, and
+/// move it into place only if size and SHA-256 match `file`.
+fn fetch_verified(
+    agent: &ureq::Agent,
+    url: &str,
+    dest: &Path,
+    file: &PinnedFile,
+    mut on_bytes: impl FnMut(u64),
+) -> Result<(), FetchError> {
+    use sha2::{Digest, Sha256};
+    use std::io::{Read, Write};
+
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let part = dest.with_file_name(format!(
+        "{}.part",
+        dest.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("download")
+    ));
+
+    on_bytes(0);
+    let mut response = agent
+        .get(url)
+        .call()
+        .map_err(|e| FetchError::Remote(e.to_string()))?;
+    let mut reader = response.body_mut().as_reader();
+
+    let result = (|| {
+        let mut out = std::fs::File::create(&part)?;
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut done: u64 = 0;
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| FetchError::Remote(e.to_string()))?;
+            if n == 0 {
+                break;
+            }
+            done += n as u64;
+            if done > file.size {
+                return Err(FetchError::Remote(format!(
+                    "{} is larger than expected ({} bytes)",
+                    file.name, file.size
+                )));
+            }
+            hasher.update(&buf[..n]);
+            out.write_all(&buf[..n])?;
+            on_bytes(done);
+        }
+        out.flush()?;
+        drop(out);
+        if done != file.size {
+            return Err(FetchError::Remote(format!(
+                "{} is incomplete ({done} of {} bytes)",
+                file.name, file.size
+            )));
+        }
+        let digest = to_hex(&hasher.finalize());
+        if !digest.eq_ignore_ascii_case(file.sha256) {
+            return Err(FetchError::Remote(format!(
+                "{} failed its checksum (got {digest})",
+                file.name
+            )));
+        }
+        // Rename can't replace an existing file on every platform; a
+        // wrong-sized leftover is the only thing that could be there.
+        match std::fs::remove_file(dest) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        std::fs::rename(&part, dest)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    result
+}
+
+fn http_agent() -> ureq::Agent {
+    use ureq::tls::{TlsConfig, TlsProvider};
+    ureq::Agent::config_builder()
+        .tls_config(
+            TlsConfig::builder()
+                .provider(TlsProvider::NativeTls)
+                .build(),
+        )
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(RESPONSE_TIMEOUT))
+        .build()
+        .into()
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        })
+}
+
+/// `hf-hub`'s per-repo cache directory name: `models--<owner>--<repo>`.
+fn repo_folder_name(repo_id: &str) -> String {
+    format!("models--{}", repo_id.replace('/', "--"))
+}
+
 // ----- Offline cache probe -----------------------------------------------
 
 /// Returns `true` iff every file in `files` is already present in the
@@ -231,7 +536,7 @@ fn hf_hub_cache_root() -> Option<PathBuf> {
 /// drive it against a temp directory without touching the user's
 /// real HF cache or polluting env vars.
 fn snapshot_satisfies_files(cache_root: &Path, repo_id: &str, files: &[&str]) -> bool {
-    let repo_dir = cache_root.join(format!("models--{}", repo_id.replace('/', "--")));
+    let repo_dir = cache_root.join(repo_folder_name(repo_id));
     let snapshots = repo_dir.join("snapshots");
     let Ok(entries) = std::fs::read_dir(&snapshots) else {
         return false;
@@ -371,6 +676,224 @@ mod tests {
         std::fs::create_dir_all(&snap).unwrap();
         std::fs::write(snap.join("model.onnx"), b"").unwrap();
         assert!(snapshot_satisfies_files(&root, repo_id, &["model.onnx"]));
+    }
+
+    // ----- pinned downloads ------------------------------------------
+
+    /// Minimal HTTP/1.1 server: serves `routes` (path → (status, body))
+    /// until the test ends, one request per connection. Returns its base
+    /// URL and a log of the paths it was asked for.
+    fn serve(
+        routes: Vec<(&'static str, u16, Vec<u8>)>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log_t = log.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+                loop {
+                    let mut h = String::new();
+                    if reader.read_line(&mut h).unwrap() <= 2 {
+                        break;
+                    }
+                }
+                log_t.lock().unwrap().push(path.clone());
+                let (status, body) = routes
+                    .iter()
+                    .find(|(p, _, _)| *p == path)
+                    .map(|(_, s, b)| (*s, b.clone()))
+                    .unwrap_or((404, b"not found".to_vec()));
+                let head = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(&body);
+            }
+        });
+        (base, log)
+    }
+
+    /// A base URL nothing listens on — connecting fails immediately,
+    /// like a blocked host that actively refuses.
+    fn refused_base() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        format!("http://{addr}")
+    }
+
+    const REPO: &str = "owner/model";
+    const REV: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn pinned(name: &'static str, body: &[u8]) -> PinnedFile {
+        use sha2::{Digest, Sha256};
+        let sha = to_hex(&Sha256::digest(body));
+        PinnedFile {
+            name,
+            sha256: Box::leak(sha.into_boxed_str()),
+            size: body.len() as u64,
+        }
+    }
+
+    fn route(name: &str) -> &'static str {
+        Box::leak(format!("/{REPO}/resolve/{REV}/{name}").into_boxed_str())
+    }
+
+    #[test]
+    fn source_file_url_uses_resolve_layout_and_trims_slash() {
+        let src = DownloadSource::mirror("https://example.com/models/");
+        assert_eq!(src.base_url(), "https://example.com/models");
+        assert_eq!(
+            src.file_url("owner/model", "abc", "encoder.onnx"),
+            "https://example.com/models/owner/model/resolve/abc/encoder.onnx"
+        );
+        assert_eq!(
+            DownloadSource::hugging_face().file_url("a/b", "main", "t.txt"),
+            "https://huggingface.co/a/b/resolve/main/t.txt"
+        );
+    }
+
+    /// The case that motivated this: the first host refuses the
+    /// connection, so every file comes from the next one — and lands
+    /// where `hf-hub` and the cache probe look.
+    #[test]
+    fn falls_back_to_next_source_and_populates_hf_cache() {
+        let root = unique_temp_dir("pinned-fallback");
+        let _cleanup = scopeguard_remove(root.clone());
+        let files = [
+            pinned("encoder.onnx", b"enc-bytes"),
+            pinned("tokens.txt", b"a 0\nb 1\n"),
+        ];
+        let (mirror, log) = serve(vec![
+            (route("encoder.onnx"), 200, b"enc-bytes".to_vec()),
+            (route("tokens.txt"), 200, b"a 0\nb 1\n".to_vec()),
+        ]);
+        let sources = [
+            DownloadSource::mirror(refused_base()),
+            DownloadSource::mirror(mirror),
+        ];
+
+        let mut events = Vec::new();
+        let snap =
+            download_pinned_into(&root, REPO, REV, &files, &sources, |p| events.push(p)).unwrap();
+
+        assert_eq!(snap, root.join("models--owner--model/snapshots").join(REV));
+        assert_eq!(
+            std::fs::read(snap.join("encoder.onnx")).unwrap(),
+            b"enc-bytes"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("models--owner--model/refs/main")).unwrap(),
+            REV
+        );
+        assert!(snapshot_satisfies_files(
+            &root,
+            REPO,
+            &["encoder.onnx", "tokens.txt"]
+        ));
+        assert!(!snap.join("encoder.onnx.part").exists());
+        // Sticky: the refused host isn't retried for the second file.
+        assert_eq!(log.lock().unwrap().len(), 2);
+        let last = events.last().unwrap();
+        assert_eq!((last.file_index, last.file_count), (2, 2));
+        assert_eq!(last.bytes_done, 8);
+        assert_eq!(last.bytes_total, Some(8));
+    }
+
+    /// A source that serves the wrong bytes is not trusted: the file is
+    /// rejected and the next source is used.
+    #[test]
+    fn checksum_mismatch_falls_through_to_next_source() {
+        let root = unique_temp_dir("pinned-mismatch");
+        let _cleanup = scopeguard_remove(root.clone());
+        let files = [pinned("model.onnx", b"genuine!")];
+        let (bad, _) = serve(vec![(route("model.onnx"), 200, b"tampered".to_vec())]);
+        let (good, _) = serve(vec![(route("model.onnx"), 200, b"genuine!".to_vec())]);
+        let sources = [DownloadSource::mirror(bad), DownloadSource::mirror(good)];
+
+        let snap = download_pinned_into(&root, REPO, REV, &files, &sources, |_| {}).unwrap();
+        assert_eq!(std::fs::read(snap.join("model.onnx")).unwrap(), b"genuine!");
+    }
+
+    /// With no good source left, nothing is left behind that the cache
+    /// probe would mistake for a finished download.
+    #[test]
+    fn fails_when_every_source_fails_and_leaves_no_file() {
+        let root = unique_temp_dir("pinned-allfail");
+        let _cleanup = scopeguard_remove(root.clone());
+        let files = [pinned("model.onnx", b"genuine!")];
+        let (bad, _) = serve(vec![(route("model.onnx"), 200, b"tampered".to_vec())]);
+        let (missing, _) = serve(vec![]);
+        let sources = [DownloadSource::mirror(bad), DownloadSource::mirror(missing)];
+
+        let err = download_pinned_into(&root, REPO, REV, &files, &sources, |_| {}).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("checksum"), "{msg}");
+        assert!(msg.contains("404"), "{msg}");
+        let snap = root.join("models--owner--model/snapshots").join(REV);
+        assert!(!snap.join("model.onnx").exists());
+        assert!(!snap.join("model.onnx.part").exists());
+        assert!(!root.join("models--owner--model/refs/main").exists());
+    }
+
+    #[test]
+    fn truncated_body_is_rejected() {
+        let root = unique_temp_dir("pinned-short");
+        let _cleanup = scopeguard_remove(root.clone());
+        let mut file = pinned("model.onnx", b"full body");
+        file.size = 100;
+        let (host, _) = serve(vec![(route("model.onnx"), 200, b"full body".to_vec())]);
+        let err = download_pinned_into(
+            &root,
+            REPO,
+            REV,
+            &[file],
+            &[DownloadSource::mirror(host)],
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("incomplete"), "{err}");
+    }
+
+    /// Files already at their pinned size are not fetched again, so a
+    /// re-run after an interruption only downloads what's missing.
+    #[test]
+    fn skips_files_already_present_at_pinned_size() {
+        let root = unique_temp_dir("pinned-resume");
+        let _cleanup = scopeguard_remove(root.clone());
+        let files = [pinned("a.onnx", b"aaaa"), pinned("b.txt", b"bb")];
+        let snap = root.join("models--owner--model/snapshots").join(REV);
+        std::fs::create_dir_all(&snap).unwrap();
+        std::fs::write(snap.join("a.onnx"), b"aaaa").unwrap();
+        let (host, log) = serve(vec![(route("b.txt"), 200, b"bb".to_vec())]);
+
+        download_pinned_into(
+            &root,
+            REPO,
+            REV,
+            &files,
+            &[DownloadSource::mirror(host)],
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(*log.lock().unwrap(), vec![route("b.txt").to_string()]);
+    }
+
+    #[test]
+    fn no_sources_is_an_error() {
+        let root = unique_temp_dir("pinned-nosource");
+        let _cleanup = scopeguard_remove(root.clone());
+        let err =
+            download_pinned_into(&root, REPO, REV, &[pinned("x", b"x")], &[], |_| {}).unwrap_err();
+        assert!(err.to_string().contains("no download source"), "{err}");
     }
 
     /// Unique-per-test scratch directory under the OS temp dir. We

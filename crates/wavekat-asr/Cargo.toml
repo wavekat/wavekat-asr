@@ -18,7 +18,7 @@ default = []
 # reporting. Used by any backend whose model files live on HF Hub;
 # enabled transitively by such backends so callers usually don't
 # turn it on directly.
-download = ["dep:hf-hub"]
+download = ["dep:hf-hub", "dep:ureq", "dep:sha2"]
 # Local streaming backend wrapping sherpa-onnx around a streaming
 # Zipformer transducer. Auto-downloads the default bilingual EN+ZH
 # model from HuggingFace on first use.
@@ -31,6 +31,10 @@ tracing = "0.1"
 
 sherpa-onnx = { version = "1.13", optional = true }
 hf-hub = { version = "0.5", default-features = false, features = ["ureq", "native-tls"], optional = true }
+# Same HTTP client and TLS stack hf-hub already pulls in, used directly
+# for pinned downloads from HF-layout mirrors.
+ureq = { version = "3", default-features = false, features = ["native-tls"], optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "time", "sync"] }

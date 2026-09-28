@@ -118,6 +118,12 @@ Local streaming Zipformer / Paraformer via
 selected model from HuggingFace on first use; cached under `$HF_HOME/hub/`
 (default `~/.cache/huggingface/hub/`).
 
+Where HuggingFace is unreachable, pre-fetch with
+`download_preset_to_cache(&preset, &sources, on_progress)`: it tries each
+`DownloadSource` in order (HuggingFace, or any mirror serving the same
+`{base}/{repo}/resolve/{revision}/{file}` layout), checks every file against
+the SHA-256 pinned in the preset, and writes into the same cache.
+
 ### Model presets
 
 Model choice is a construction-time call — the ONNX files load into the
