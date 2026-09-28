@@ -22,7 +22,7 @@ pub mod download;
 pub mod error;
 
 #[cfg(feature = "download")]
-pub use download::DownloadProgress;
+pub use download::{DownloadProgress, DownloadSource, PinnedFile};
 pub use error::AsrError;
 pub use wavekat_core::AudioFrame;
 
