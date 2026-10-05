@@ -31,6 +31,7 @@ ci:
 	cargo clippy --workspace --all-features -- -D warnings
 	cargo test -p wavekat-asr --no-default-features
 	cargo test -p wavekat-asr --no-default-features --features sherpa-onnx
+	cargo test -p wavekat-asr --no-default-features --features r2t2
 	cargo doc --no-deps -p wavekat-asr --all-features
 
 ci-fast:

@@ -5,10 +5,10 @@
 //! them into a caller-chosen directory while a `FnMut` closure receives
 //! [`DownloadProgress`] updates as bytes arrive.
 //!
-//! Today only the [`crate::backends::sherpa_onnx`] backend uses this —
-//! `sherpa_onnx::download_preset_with_progress` is a thin wrapper that
-//! turns a `ModelPreset` into a `(repo_id, &[&str])` call into here. A
-//! future Whisper / Qwen3-ASR / etc. backend can do the same.
+//! The sherpa-onnx backend's `download_preset_with_progress` is a thin
+//! wrapper that turns a `ModelPreset` into a `(repo_id, &[&str])` call
+//! into here; the R2T2 backend uses [`download_pinned_to_cache`] for
+//! its GGUF weights.
 //!
 //! Paired with [`is_repo_cached`], a pure-filesystem probe that uses
 //! the same `(repo_id, files)` pair to answer "are these already on

@@ -12,9 +12,14 @@
 //! This crate is pre-1.0. The trait surface may iterate as more
 //! backends land. Pin to an exact patch version.
 //!
-//! The bundled backend is [`backends::sherpa_onnx`] (behind the
-//! `sherpa-onnx` Cargo feature): a local streaming Zipformer that
-//! auto-downloads its model from HuggingFace on first use.
+//! Bundled backends, each behind its own Cargo feature:
+//!
+//! - `backends::sherpa_onnx` (`sherpa-onnx`): a local streaming
+//!   Zipformer / Paraformer that auto-downloads its model from
+//!   HuggingFace on first use.
+//! - `backends::r2t2` (`r2t2`, experimental): NetEase Youdao's
+//!   Confucius4-R2T2 append-only streaming model via llama.cpp, on
+//!   Metal / CUDA / Vulkan / CPU.
 
 pub mod backends;
 #[cfg(feature = "download")]
