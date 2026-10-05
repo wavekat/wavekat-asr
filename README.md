@@ -23,9 +23,9 @@ ASR engines behind common Rust traits. Same pattern as
 | Backend | Feature flag | Transport | Languages | Status | License |
 |---------|-------------|-----------|-----------|--------|---------|
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (streaming Zipformer / Paraformer) | `sherpa-onnx` | Local ONNX | EN, ZH, EN+ZH | ✅ Available | Apache 2.0 |
+| [Confucius4-R2T2](https://github.com/netease-youdao/Confucius4-R2T2) (append-only streaming LLM-ASR) | `r2t2` | Local llama.cpp (Metal / CUDA / Vulkan / CPU) | ZH, EN (+ others) | 🧪 Experimental | Code Apache 2.0; weights [NetEase model licence](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE) |
 
-Local-first by design: the bundled sherpa-onnx backend ships today and
-runs entirely on-device.
+Local-first by design: both backends run entirely on-device.
 
 ## Quick start
 
@@ -152,11 +152,71 @@ cargo run --release --example transcribe_mic --features sherpa-onnx
 WAVEKAT_ASR_PRESET=en cargo run --release --example transcribe_mic --features sherpa-onnx
 ```
 
+## Confucius4-R2T2 backend
+
+[Confucius4-R2T2](https://github.com/netease-youdao/Confucius4-R2T2) is
+NetEase Youdao's streaming fine-tune of Qwen3-ASR-1.7B. Its output is
+**append-only** — committed text never changes — and it decodes in
+chunks of 80 ms to 2 s. This backend runs the official GGUF export
+through llama.cpp's multimodal (`mtmd`) API, so the same code runs on
+macOS, Linux and Windows:
+
+- **macOS:** Metal, automatically.
+- **Linux / Windows:** CPU by default. For a GPU build, enable the
+  matching `llama-cpp-2` feature in your own manifest (Cargo unifies it):
+  `llama-cpp-2 = { version = "=0.1.158", features = ["cuda"] }` (or `vulkan`).
+
+```rust
+use wavekat_asr::backends::r2t2::{R2t2Asr, R2t2Config};
+
+let config = R2t2Config {
+    language: Some("Chinese".into()), // None = auto-detect
+    chunk_ms: 160,
+    ..R2t2Config::default()
+};
+let (mut asr, rx) = R2t2Asr::with_config(config)?; // downloads ~2.5 GB on first run
+// push_audio / finish as with any backend; asr.stats() reports step time, lag and RTF.
+```
+
+How it streams: every chunk re-feeds the whole utterance to the model,
+prompted with the text committed so far (minus a one-token rollback
+window); the continuation is cut at R2T2's `|` stable-prefix marker and
+whatever extends the committed text is emitted as a `Partial`. A WebRTC
+VAD endpointer closes utterances (`Final`) so step cost stays bounded.
+Decoding runs on a worker thread — `push_audio` never blocks — and when a
+machine can't keep up, queued chunks merge into one larger step instead
+of building a backlog. Details and measurements:
+[`docs/05-r2t2-backend.md`](docs/05-r2t2-backend.md).
+
+| Weights constant | Files (from [`netease-youdao/Confucius4-R2T2-GGUF`](https://huggingface.co/netease-youdao/Confucius4-R2T2-GGUF)) | Size |
+|------------------|------|------|
+| `R2T2_Q8_0` *(default)* | `Confucius4-R2T2-Q8_0.gguf` + `mmproj-Confucius4-R2T2-f16.gguf` | 2.5 GB |
+| `R2T2_Q4_K_M` | `Confucius4-R2T2-Q4_K_M.gguf` + `mmproj-Confucius4-R2T2-f16.gguf` | 1.7 GB |
+| `R2T2_F16` | `Confucius4-R2T2-f16.gguf` + `mmproj-Confucius4-R2T2-f16.gguf` | 4.1 GB |
+
+```sh
+# Live mic, with per-step timing on the status line (Ctrl-C to stop)
+cargo run --release --example r2t2_mic --features r2t2
+
+# Stream a WAV at real-time pace and print latency / RTF stats
+cargo run --release --example r2t2_wav --features r2t2 -- audio.wav
+
+# Knobs: WAVEKAT_R2T2_WEIGHTS=q8|q4|f16, WAVEKAT_R2T2_LANGUAGE=Chinese,
+#        WAVEKAT_R2T2_CHUNK_MS=320, WAVEKAT_R2T2_CONTEXT="hotwords…"
+WAVEKAT_R2T2_CHUNK_MS=320 cargo run --release --example r2t2_mic --features r2t2
+```
+
+> [!NOTE]
+> The R2T2 **weights** are not Apache-2.0: they are governed by the
+> NetEase Youdao Model Use License Agreement (royalty-free with
+> conditions). Review it before shipping the weights in a product.
+
 ## Feature flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `sherpa-onnx` | No | Local streaming Zipformer / Paraformer via sherpa-onnx; pulls in `hf-hub` for first-run model download |
+| `r2t2` | No | Local Confucius4-R2T2 via llama.cpp (`llama-cpp-2` with `mtmd`) plus WebRTC VAD endpointing; downloads pinned, SHA-256-verified GGUF weights on first use |
 
 ## Building from source
 
@@ -170,6 +230,11 @@ ONNX Runtime through CMake. You'll need:
 
 The first build of `sherpa-onnx-sys` is slow (5–10 min); subsequent
 builds are cached by Cargo.
+
+Enabling `r2t2` compiles llama.cpp from source (via `llama-cpp-sys-2`),
+which needs `cmake`, a C++ toolchain and `libclang` for bindgen
+(`libclang-dev` on Debian/Ubuntu; bundled with Xcode on macOS). First
+build takes a few minutes.
 
 ## Important notes
 

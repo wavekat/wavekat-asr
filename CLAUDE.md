@@ -50,8 +50,9 @@ make lint           # clippy with -D warnings
 make ci             # everything CI runs
 ```
 
-On Linux, the `transcribe_mic` example needs ALSA dev headers (`libasound2-dev`
-on Debian/Ubuntu). The library itself does not.
+On Linux, the `transcribe_mic` / `r2t2_mic` examples need ALSA dev headers
+(`libasound2-dev` on Debian/Ubuntu). The library itself does not. The `r2t2`
+feature builds llama.cpp from source: it needs `cmake` and `libclang`.
 
 ## Architecture
 

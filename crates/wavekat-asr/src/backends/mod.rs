@@ -5,3 +5,6 @@
 
 #[cfg(feature = "sherpa-onnx")]
 pub mod sherpa_onnx;
+
+#[cfg(feature = "r2t2")]
+pub mod r2t2;

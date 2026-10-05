@@ -14,8 +14,10 @@ jobs:
     runs-on: [self-hosted, wavekat-ci]
     steps:
       - uses: actions/checkout@v6
-      - name: Install ALSA dev headers
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Install build dependencies
+        # ALSA headers for the mic examples; cmake + libclang to build
+        # llama.cpp for the `r2t2` feature.
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev cmake clang libclang-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -46,10 +48,13 @@ jobs:
         features:
           - ""
           - "sherpa-onnx"
+          - "r2t2"
     steps:
       - uses: actions/checkout@v6
-      - name: Install ALSA dev headers
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Install build dependencies
+        # ALSA headers for the mic examples; cmake + libclang to build
+        # llama.cpp for the `r2t2` feature.
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev cmake clang libclang-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run tests

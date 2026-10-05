@@ -23,6 +23,14 @@ download = ["dep:hf-hub", "dep:ureq", "dep:sha2"]
 # Zipformer transducer. Auto-downloads the default bilingual EN+ZH
 # model from HuggingFace on first use.
 sherpa-onnx = ["dep:sherpa-onnx", "download"]
+# Local streaming backend running NetEase Youdao's Confucius4-R2T2
+# (a Qwen3-ASR fine-tune with append-only streaming output) through
+# llama.cpp. Metal is used automatically on macOS; other platforms
+# build CPU-only unless the consumer enables a GPU feature on
+# `llama-cpp-2` (e.g. `cuda`, `vulkan`) in its own manifest.
+# Auto-downloads the official GGUF weights from HuggingFace on
+# first use.
+r2t2 = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2", "dep:wavekat-vad", "download"]
 
 [dependencies]
 wavekat-core = "0.0.11"
@@ -30,6 +38,12 @@ thiserror = "2"
 tracing = "0.1"
 
 sherpa-onnx = { version = "1.13", optional = true }
+# Pinned exactly: the `mtmd` (multimodal) C API moves between llama.cpp
+# releases, and the R2T2 audio path is written against this one.
+llama-cpp-2 = { version = "=0.1.158", default-features = false, features = ["mtmd"], optional = true }
+llama-cpp-sys-2 = { version = "=0.1.158", default-features = false, features = ["mtmd"], optional = true }
+# Endpointing for the R2T2 backend (WebRTC VAD; small C dependency).
+wavekat-vad = { version = "0.1.17", default-features = false, features = ["webrtc"], optional = true }
 hf-hub = { version = "0.5", default-features = false, features = ["ureq", "native-tls"], optional = true }
 # Same HTTP client and TLS stack hf-hub already pulls in, used directly
 # for pinned downloads from HF-layout mirrors.
@@ -51,6 +65,14 @@ required-features = ["sherpa-onnx"]
 [[example]]
 name = "transcribe_mic"
 required-features = ["sherpa-onnx"]
+
+[[example]]
+name = "r2t2_wav"
+required-features = ["r2t2"]
+
+[[example]]
+name = "r2t2_mic"
+required-features = ["r2t2"]
 
 [package.metadata.docs.rs]
 all-features = true
